@@ -9,6 +9,10 @@
     memlog tree                     # the memory folders
     memlog stats
 
+    memlog note "Buy milk, ask about the catchup bug"   # append to today's journal page
+    memlog note add --to ideas "watch shell history"    # append to a named note
+    memlog note list | show ideas | edit ideas | delete ideas
+
     memlog lock                     # seal every memory file with a passphrase
     memlog retention 90             # keep 90 days, purge older on every open
     memlog forget --before 2024-01-01
@@ -165,6 +169,85 @@ def cmd_watch(args: argparse.Namespace) -> int:
         print(f"watching {args.path} → {vault.root}  (Ctrl-C to stop)", file=sys.stderr)
         n = watch(vault, args.path, source=args.source, from_start=args.from_start)
     print(f"stored {n} entries", file=sys.stderr)
+    return 0
+
+
+NOTE_VERBS = {"add", "list", "ls", "show", "cat", "edit", "delete", "rm", "rename", "mv"}
+
+
+def _note_options(words: list[str]) -> tuple[list[str], dict[str, str | bool]]:
+    """Pull --to NAME, --when TS and --yes out of the note command's words, wherever they sit."""
+    opts: dict[str, str | bool] = {"to": "", "when": "", "yes": False}
+    rest: list[str] = []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w in {"--yes", "-y"}:
+            opts["yes"] = True
+        elif w in {"--to", "--when"} and i + 1 < len(words):
+            opts[w[2:]] = words[i + 1]
+            i += 1
+        elif w.startswith("--to=") or w.startswith("--when="):
+            key, _, value = w[2:].partition("=")
+            opts[key] = value
+        elif w == "--":
+            rest += words[i + 1 :]
+            break
+        else:
+            rest.append(w)
+        i += 1
+    return rest, opts
+
+
+def cmd_note(args: argparse.Namespace) -> int:
+    words, opts = _note_options(list(args.words))
+    # Options may come before the words (argparse sees them) or among them (we do).
+    args.to = args.to or opts["to"] or None
+    args.when = args.when or opts["when"] or None
+    args.yes = bool(args.yes or opts["yes"])
+    verb = words.pop(0) if words and words[0] in NOTE_VERBS else "add"
+    with _vault(args) as vault:
+        pad = vault.notes
+        try:
+            if verb == "add":
+                text = " ".join(words) if words else sys.stdin.read()
+                if not text.strip():
+                    print("nothing to note", file=sys.stderr)
+                    return 1
+                when = datetime.fromisoformat(args.when) if args.when else None
+                name = pad.add(text, name=args.to, when=when)
+                print(f"noted → notes/{name}.md")
+            elif verb in {"list", "ls"}:
+                notes = pad.list()
+                if not notes:
+                    print("no notes yet")
+                for n in notes:
+                    print(f"{n.modified:%Y-%m-%d %H:%M}  {n.sections:>4} section(s)  {n.name}")
+            elif verb in {"show", "cat"}:
+                if not words:
+                    print("which note? memlog note show NAME", file=sys.stderr)
+                    return 2
+                sys.stdout.write(pad.read(words[0]))
+            elif verb == "edit":
+                name = words[0] if words else pad.journal_name()
+                changed = pad.edit(name)
+                print(f"{'saved' if changed else 'unchanged'}: notes/{name}.md")
+            elif verb in {"delete", "rm"}:
+                if not words:
+                    print("which note? memlog note delete NAME", file=sys.stderr)
+                    return 2
+                if not _confirm(args, f"Delete note {words[0]!r}?"):
+                    return 1
+                print("deleted" if pad.delete(words[0]) else "no such note")
+            elif verb in {"rename", "mv"}:
+                if len(words) != 2:
+                    print("usage: memlog note rename OLD NEW", file=sys.stderr)
+                    return 2
+                pad.rename(words[0], words[1])
+                print(f"renamed → notes/{words[1]}.md")
+        except (FileNotFoundError, FileExistsError, ValueError, RuntimeError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     return 0
 
 
@@ -398,6 +481,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--source")
     s.add_argument("--from-start", action="store_true")
     s.set_defaults(func=cmd_watch)
+
+    s = sub.add_parser(
+        "note", help="the notepad: note TEXT | note add|list|show|edit|delete|rename ...",
+        description="memlog note TEXT appends to today's journal page. Options: --to NAME (append to a "
+                    "named note), --when ISO-TIMESTAMP, --yes (skip the delete confirmation).")
+    s.add_argument("--to", metavar="NAME", help="named note to append to (default: today's journal page)")
+    s.add_argument("--when", help="ISO timestamp for the section heading (default: now)")
+    s.add_argument("--yes", "-y", action="store_true", help="skip the delete confirmation")
+    s.add_argument("words", nargs=argparse.REMAINDER,
+                   help="a verb (add, list, show, edit, delete, rename) or the text to note")
+    s.set_defaults(func=cmd_note)
 
     s = sub.add_parser("tree", help="show the memory folders")
     s.set_defaults(func=cmd_tree)

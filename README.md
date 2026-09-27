@@ -42,6 +42,38 @@ memlog tree                                  # the memory folders
 memlog stats
 ```
 
+### The notepad
+
+```bash
+memlog note "Buy milk, ask about the airflow catchup bug"   # appends to today's journal page
+memlog note --to ideas "memlog could watch shell history"   # appends to a named note
+memlog note list
+memlog note show ideas
+memlog note edit ideas                       # opens $EDITOR; works on a sealed vault too
+memlog note rename ideas plans
+memlog note delete plans
+```
+
+Notes are Markdown files under `notes/`. A quick note lands in
+`notes/journal/YYYY/YYYY-MM-DD.md`; a named note is `notes/<name>.md`, and
+names can have folders (`work/standup`). Every appended note becomes a section
+headed by its timestamp:
+
+```markdown
+## 2026-09-27 14:03
+Buy milk, ask about the airflow catchup bug
+```
+
+so `memlog ask "what did I note last week?"` works: notes are indexed section
+by section, each with the heading's timestamp (or the file's modification time
+when a heading is not a timestamp), and show up in answers with the source
+`notepad`. Edit the files with anything you like when the vault is plaintext,
+then `memlog reindex`; when it is sealed, `memlog note edit` decrypts to a
+private temp file, launches your editor, re-seals on save and shreds the temp
+file. Notes are sealed with everything else, and **retention never expires a
+note**: they stay until you delete them (or `memlog forget --conv note:NAME`
+for a section-level delete by date).
+
 ### The memory folders
 
 Everything lives under `~/.memlog` (override with `--root DIR` or
@@ -53,6 +85,8 @@ Everything lives under `~/.memlog` (override with `--root DIR` or
   conversations/2026/09/chat/chat_2026-09-27.jsonl    one file per conversation
   conversations/2026/09/gemini/lifetimes.jsonl
   activities/2026/09/gym.jsonl                one file per source per month
+  notes/ideas.md                              the notepad: named notes, edited in place
+  notes/journal/2026/2026-09-27.md            quick notes land on the day's journal page
   reports/2026/2026-09-27_what-did-i-do-this-week.md   answers you chose to keep
   index/memlog.db                             search index, rebuilt from the folders by `memlog reindex`
 ```
@@ -84,7 +118,8 @@ rec.activity("Read the Rust book chapter on lifetimes")
 ### Security and privacy
 
 **Nothing goes online.** The package imports no networking modules, and a test
-(`tests/test_security.py`) fails the build if one is ever added. There is no
+(`tests/test_security.py`) fails the build if one is ever added. The only
+program memlog ever starts is your `$EDITOR`, for `memlog note edit`. There is no
 telemetry, no update check, no analytics. `memlog stats` reports whether
 anything *could* leave the machine under the current configuration.
 

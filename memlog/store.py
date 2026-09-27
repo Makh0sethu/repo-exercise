@@ -354,8 +354,12 @@ class Store:
         conv: Optional[str],
         source: Optional[str],
         ids: Optional[Iterable[int]],
+        loc: Optional[str] = None,
     ) -> tuple[str, list[Any]]:
         clauses, args = [], []
+        if loc is not None:
+            clauses.append("loc = ?")
+            args.append(loc)
         if before is not None:
             clauses.append("ts < ?")
             args.append(_to_ts(before))
@@ -380,9 +384,10 @@ class Store:
         conv: Optional[str] = None,
         source: Optional[str] = None,
         ids: Optional[Iterable[int]] = None,
+        loc: Optional[str] = None,
     ) -> list[Entry]:
         """The entries ``forget`` would delete with the same filters."""
-        where, args = self._forget_filter(before, conv, source, ids)
+        where, args = self._forget_filter(before, conv, source, ids, loc)
         rows = self.conn.execute(f"SELECT * FROM entries WHERE {where} ORDER BY ts", args).fetchall()
         return [_row_to_entry(r) for r in rows]
 
@@ -393,9 +398,10 @@ class Store:
         conv: Optional[str] = None,
         source: Optional[str] = None,
         ids: Optional[Iterable[int]] = None,
+        loc: Optional[str] = None,
     ) -> int:
         """Delete entries matching every given filter. Returns the number deleted."""
-        where, args = self._forget_filter(before, conv, source, ids)
+        where, args = self._forget_filter(before, conv, source, ids, loc)
         cur = self.conn.execute(f"DELETE FROM entries WHERE {where}", args)
         deleted = cur.rowcount
         self.conn.commit()  # always: an open write transaction would block backup()/serialize()

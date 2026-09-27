@@ -4,6 +4,8 @@
       vault.json                     layout version, retention policy, key salt + verifier (no secrets)
       conversations/<YYYY>/<MM>/<source>/<conversation>.jsonl
       activities/<YYYY>/<MM>/<source>.jsonl
+      notes/<name>.md                the notepad: named notes, edited in place
+      notes/journal/<YYYY>/<YYYY-MM-DD>.md      quick notes land in the day's journal page
       reports/<YYYY>/<YYYY-MM-DD>_<slug>.md     answers you chose to keep
       index/memlog.db                search index; rebuilt from the folders by ``reindex()``
 
@@ -36,6 +38,7 @@ DEFAULT_ROOT = Path(os.environ.get("MEMLOG_ROOT", Path.home() / ".memlog"))
 CONFIG_NAME = "vault.json"
 LAYOUT_VERSION = 2
 KINDS = ("conversations", "activities")
+NOTES_DIR = "notes"
 ACTIVITY_ROLES = frozenset({"activity", "event", "action", "note"})
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -138,14 +141,29 @@ class Vault:
 
     # -- sealed file io ----------------------------------------------------
 
-    def _read_lines(self, path: Path) -> list[dict[str, Any]]:
+    def read_file(self, path: Path) -> bytes:
+        """Read a vault file, unsealing it if the vault is locked. Missing file -> b''."""
         if not path.exists():
-            return []
+            return b""
         raw = path.read_bytes()
         if crypto.is_encrypted(raw):
             if self.keys is None:
                 raise LockedError(f"{path} is sealed; open the vault with its passphrase")
             raw = crypto.unseal(raw, self.keys)
+        return raw
+
+    def write_file(self, path: Path, data: bytes) -> None:
+        """Write a vault file owner-only, sealed if the vault is locked."""
+        self._mkdirs(path)
+        crypto.write_private(path, crypto.seal(data, self.keys) if self.keys else data)
+
+    def remove_file(self, path: Path) -> None:
+        if path.exists():
+            crypto.shred(path)
+        self._prune_empty_dirs(path.parent)
+
+    def _read_lines(self, path: Path) -> list[dict[str, Any]]:
+        raw = self.read_file(path)
         out = []
         for line in raw.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
@@ -156,13 +174,9 @@ class Vault:
 
     def _write_lines(self, path: Path, records: list[dict[str, Any]]) -> None:
         if not records:
-            if path.exists():
-                crypto.shred(path)
-            self._prune_empty_dirs(path.parent)
+            self.remove_file(path)
             return
-        data = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records).encode("utf-8")
-        self._mkdirs(path)
-        crypto.write_private(path, crypto.seal(data, self.keys) if self.keys else data)
+        self.write_file(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records).encode("utf-8"))
 
     def _mkdirs(self, path: Path) -> None:
         """Create every folder between the root and ``path`` owner-only."""
@@ -238,9 +252,13 @@ class Vault:
         when = when or datetime.now(timezone.utc)
         rel = Path("reports") / when.strftime("%Y") / f"{when:%Y-%m-%d}_{slugify(question)}.md"
         body = f"# {question}\n\n_{when:%Y-%m-%d %H:%M} UTC_\n\n```\n{text}\n```\n".encode("utf-8")
-        self._mkdirs(self.root / rel)
-        crypto.write_private(self.root / rel, crypto.seal(body, self.keys) if self.keys else body)
+        self.write_file(self.root / rel, body)
         return rel
+
+    @property
+    def notes(self) -> "Notepad":
+        from .notepad import Notepad
+        return Notepad(self)
 
     # -- deleting ----------------------------------------------------------
 
@@ -251,20 +269,36 @@ class Vault:
         conv: Optional[str] = None,
         source: Optional[str] = None,
         ids: Optional[Iterable[int]] = None,
+        keep_notes: bool = False,
     ) -> int:
+        """Delete matching memories from their files and from the index.
+
+        ``keep_notes`` leaves notepad entries alone (retention uses this: notes
+        are deliberate and stay until you delete them).
+        """
         victims = self.index.matching(before=before, conv=conv, source=source, ids=ids)
+        if keep_notes:
+            victims = [e for e in victims if not e.loc.startswith(NOTES_DIR + "/")]
         if not victims:
             return 0
-        by_file: dict[str, set[str]] = {}
+        by_file: dict[str, list[Entry]] = {}
         for e in victims:
-            by_file.setdefault(e.loc, set()).add(e.uid)
-        for rel, uids in by_file.items():
-            if not rel:
-                continue
+            by_file.setdefault(e.loc, []).append(e)
+        drop_ids = []
+        for rel, entries in by_file.items():
             path = self.root / rel
-            keep = [r for r in self._read_lines(path) if r.get("uid") not in uids]
-            self._write_lines(path, keep)
-        return self.index.forget(ids=[e.id for e in victims])
+            if rel.startswith(NOTES_DIR + "/"):
+                # The notepad rewrites the note and reindexes it, which drops these rows itself.
+                self.notes.remove_sections(path, {e.text for e in entries})
+                continue
+            if rel:
+                uids = {e.uid for e in entries}
+                keep = [r for r in self._read_lines(path) if r.get("uid") not in uids]
+                self._write_lines(path, keep)
+            drop_ids += [e.id for e in entries]
+        if drop_ids:
+            self.index.forget(ids=drop_ids)
+        return len(victims)
 
     @property
     def retention_days(self) -> Optional[int]:
@@ -281,7 +315,7 @@ class Vault:
         if not self.config.retention_days:
             return 0
         cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=self.config.retention_days)
-        return self.forget(before=cutoff)
+        return self.forget(before=cutoff, keep_notes=True)
 
     def wipe(self) -> None:
         """Shred every file in the vault and remove the folders."""
@@ -319,8 +353,9 @@ class Vault:
 
     def _reseal(self, new_keys: Optional[crypto.Keys]) -> None:
         files = list(self._entry_files())
-        if (self.root / "reports").exists():
-            files += sorted(p for p in (self.root / "reports").rglob("*.md") if p.is_file())
+        for folder in ("reports", NOTES_DIR):
+            if (self.root / folder).exists():
+                files += sorted(p for p in (self.root / folder).rglob("*.md") if p.is_file())
         for path in files:
             raw = path.read_bytes()
             if crypto.is_encrypted(raw):
@@ -357,13 +392,16 @@ class Vault:
                         loc=rel,
                     )
                     n += 1
+            n += self.notes.index_all()
         return n
 
     def tree(self) -> list[tuple[str, int, int]]:
-        """(relative path, entries, bytes) for every memory file, in folder order."""
+        """(relative path, entries, bytes) for every memory file and note, in folder order."""
         out = []
         for path in self._entry_files():
             out.append((path.relative_to(self.root).as_posix(), len(self._read_lines(path)), path.stat().st_size))
+        for note in self.notes.list():
+            out.append((note.rel, note.sections, (self.root / note.rel).stat().st_size))
         return out
 
     def stats(self) -> dict[str, Any]:

@@ -14,6 +14,7 @@ conversation for relevance, and gives usable text back.
 | Time phrases | Hand-written parser | Covers the spoken forms ("over the month", "about 3 years ago") and keeps the remainder as the topical query. |
 | Per-conversation analysis | depth (best 3 turns) + coverage (matched / total turns) | Separates "one passing mention" from "a whole conversation about it". |
 | Summary | Extractive, local | Deterministic and free. LLM prose is an opt-in layer on top. |
+| Notepad | Markdown under `notes/`, sections headed by timestamps, indexed per section | Deliberate memory next to the recorded kind; readable and editable with any tool; searchable through the same `ask`. |
 | Capture | `Recorder.wrap()`, `ingest`, `watch` | In-process for your own chat loops, file tail for everything else. |
 
 ## Why folders and an index, not one of them
@@ -36,6 +37,24 @@ against a stored HMAC verifier, then seals each file with a fresh nonce
 (`crypto.seal`, format `MEMLOG2`). The single-file `Store` keeps its
 self-contained `MEMLOG1` format for standalone use and for importing old
 databases.
+
+## The notepad
+
+Recorded memories are things that happened; notes are things you decided to
+keep. They share the vault, the sealing and the index, but differ in two ways:
+
+- **Edited in place.** A note is one Markdown file; writes replace it and
+  reindex it whole (one index row per `## ` section, uid = hash of file,
+  section number and text). A forget on a note section rewrites the file
+  without that section; the notepad reindexes as part of that, so the vault
+  counts victims rather than asking the index what it deleted.
+- **Never expired.** `purge()` passes `keep_notes=True`. Retention is for
+  the background stream, not for what you wrote down on purpose.
+
+`edit` is the one place memlog starts another program. It writes the note to
+a fresh 0700 temp directory as a 0600 file, runs `$EDITOR`, reads it back,
+shreds the temp file, and re-seals into the vault. The security test allows
+`subprocess` in `notepad.py` only.
 
 ## Where it is weak, and what fixes it
 
