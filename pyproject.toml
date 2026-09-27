@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memlog"
+version = "0.1.0"
+description = "Light conversation memory and retrieval: log what you talked about, ask what you've been up to."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["litellm"]
+
+[project.scripts]
+memlog = "memlog.cli:main"
+
+[tool.setuptools]
+packages = ["memlog"]
