@@ -10,9 +10,10 @@ Record what you talk about and what you do, then ask questions like
 Rust about 3 years ago?"* and get back the relevant conversations, a
 per-conversation relevance analysis, and a readable summary.
 
-Pure standard library (Python 3.11+). Storage is one SQLite file with a full-text index.
-Local only: nothing goes online and there is no telemetry. The file can be
-encrypted with a passphrase, and you decide how long memories are kept.
+Pure standard library (Python 3.11+). Memories live in structured folders you
+can browse and grep, with a rebuildable SQLite search index alongside. Local
+only: nothing goes online and there is no telemetry. The whole vault can be
+sealed with a passphrase, and you decide how long memories are kept.
 
 ### Try it in ten seconds
 
@@ -34,13 +35,36 @@ memlog watch ~/notes/today.md                # background capture: tail a file
 memlog ask "what have I been doing over the past month?"
 memlog ask "what did I ask about airflow in the past weeks?"
 memlog ask "what was I thinking about 3 years ago?" --json
+memlog ask "what did I do this week?" --save  # keep the answer under reports/
 memlog recall "borrow checker" --since "last week"
 memlog timeframe "about 3 years ago"         # see how a time phrase is interpreted
+memlog tree                                  # the memory folders
 memlog stats
 ```
 
-The database lives at `~/.memlog/memlog.db` by default. Override with
-`--db PATH` or `MEMLOG_DB=PATH`.
+### The memory folders
+
+Everything lives under `~/.memlog` (override with `--root DIR` or
+`MEMLOG_ROOT=DIR`):
+
+```
+~/.memlog/
+  vault.json                                  layout version, retention policy, key salt (no secrets)
+  conversations/2026/09/chat/chat_2026-09-27.jsonl    one file per conversation
+  conversations/2026/09/gemini/lifetimes.jsonl
+  activities/2026/09/gym.jsonl                one file per source per month
+  reports/2026/2026-09-27_what-did-i-do-this-week.md   answers you chose to keep
+  index/memlog.db                             search index, rebuilt from the folders by `memlog reindex`
+```
+
+The folders are the source of truth. Each memory is one line of JSON with a
+stable `uid`, an ISO timestamp, source, role, conversation id, text and
+metadata, so you can read it, grep it, back it up or drop files in by hand.
+The index is a cache: delete it and it is rebuilt on the next open.
+
+Entries whose role is `activity`, `event`, `action` or `note` go under
+`activities/`; everything else is a conversation turn. Old single-file
+databases from v0.1 import with `memlog ingest ~/.memlog/memlog.db`.
 
 ### Remember a chat loop from Python
 
@@ -64,23 +88,24 @@ rec.activity("Read the Rust book chapter on lifetimes")
 telemetry, no update check, no analytics. `memlog stats` reports whether
 anything *could* leave the machine under the current configuration.
 
-**Encrypt the memory file.**
+**Seal the vault.**
 
 ```bash
-memlog lock                      # prompts for a passphrase, encrypts ~/.memlog/memlog.db
+memlog lock                      # prompts for a passphrase, seals every file under ~/.memlog
 export MEMLOG_PASSPHRASE=...     # or --passphrase-file FILE, or type it when prompted
 memlog ask "what did I do this week?"
 memlog lock                      # again to change the passphrase
-memlog unlock --yes              # back to plain SQLite, if you ever want that
+memlog unlock --yes              # back to plaintext files, if you ever want that
 ```
 
-While locked, the database is decrypted into memory only for the life of the
-command and re-encrypted on every write. The file on disk starts with
-`MEMLOG1`, not `SQLite format 3`, and contains no plaintext. The key is derived
-with scrypt; encryption and integrity use HMAC-SHA256 (see `memlog/crypto.py`
-for the exact construction). A wrong passphrase or a tampered file is refused
-outright. Files and the `~/.memlog` directory are owner-only (0600 / 0700),
-encrypted or not.
+While sealed, every memory file, report and the index is encrypted
+separately. Files are decrypted into memory only for the life of the command
+and re-sealed on every write. On disk they start with `MEMLOG2`, not JSON, and
+contain no plaintext. `vault.json` holds the key salt and a verifier, never the
+passphrase or keys. The keys are derived once per command with scrypt;
+encryption and integrity use HMAC-SHA256 (see `memlog/crypto.py` for the exact
+construction). A wrong passphrase or a tampered file is refused outright. Every
+file and folder is owner-only (0600 / 0700), sealed or not.
 
 **Decide how long to keep memories.**
 
@@ -92,12 +117,13 @@ memlog forget --before "6 months ago"
 memlog forget --older-than 30 --source shell
 memlog forget --conv chat:2026-09-12
 memlog forget --id 42
-memlog wipe --yes                # delete everything and shred the file
+memlog wipe --yes                # delete everything and shred every file
 ```
 
-Deleted entries are really gone: SQLite's `secure_delete` overwrites the freed
-pages, the search index is rebuilt so old terms leave it, and the file is
-compacted. `wipe` overwrites the file with random bytes before unlinking it.
+Deleted entries are really gone: the line leaves its folder file (the file is
+rewritten, or shredded if it ends up empty, and empty folders are removed),
+the index is rebuilt so old terms leave it, and its free pages are overwritten.
+`wipe` overwrites every file with random bytes before unlinking it.
 
 **The one online feature is off unless you switch it on.** An LLM prose summary
 needs `--llm` on the command line *and* `MEMLOG_LLM_MODEL` in the environment
@@ -122,9 +148,12 @@ memlog ask "what have I been up to this month?" --llm
    question becomes a date window. "over the month", "in the past weeks",
    "about 3 years ago", "yesterday", "since June", "in 2024", "lately".
    The rest of the question becomes the topical query.
-2. **Store** (`memlog/store.py`): SQLite table plus an FTS5 index with Porter
-   stemming, so "borrowing" finds "borrow". Each entry has a timestamp,
-   source, role and conversation id.
+2. **Vault** (`memlog/vault.py`): the folder layout above. Writes go to the
+   right folder file and to the index; forget and retention rewrite the
+   files. **Store** (`memlog/store.py`) is the index: a SQLite table plus an
+   FTS5 index with Porter stemming, so "borrowing" finds "borrow". Each
+   entry has a timestamp, source, role, conversation id, a stable uid and
+   the folder file it lives in.
 3. **Retrieval** (`memlog/retrieve.py`): BM25 ranking inside the window,
    blended with recency, then grouped per conversation. Each conversation
    gets a relevance score (how strongly its best turns match, and how much

@@ -8,6 +8,7 @@ summary.
 """
 
 from .store import Entry, Store
+from .vault import Vault
 from .timeframe import TimeFrame, parse_timeframe
 from .retrieve import Hit, ConversationAnalysis, RecallResult, recall
 from .summarize import render_report, extractive_summary, keywords
@@ -15,6 +16,7 @@ from .summarize import render_report, extractive_summary, keywords
 __all__ = [
     "Entry",
     "Store",
+    "Vault",
     "TimeFrame",
     "parse_timeframe",
     "Hit",
@@ -26,4 +28,4 @@ __all__ = [
     "keywords",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

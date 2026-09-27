@@ -15,15 +15,17 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from .store import Store
+
+Memory = Any  # a Store or a Vault: anything with add() and add_many()
 
 
 class Recorder:
     """Records turns of one conversation. Wrap a chat function to remember everything it sees."""
 
-    def __init__(self, store: Store, source: str = "chat", conv: Optional[str] = None):
+    def __init__(self, store: Memory, source: str = "chat", conv: Optional[str] = None):
         self.store = store
         self.source = source
         self.conv = conv or f"{source}:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -49,9 +51,18 @@ class Recorder:
         return remembered
 
 
-def _iter_file(path: Path) -> Iterator[dict]:
+def _iter_file(path: Path, passphrase: Optional[str] = None) -> Iterator[dict]:
     suffix = path.suffix.lower()
-    if suffix in {".jsonl", ".ndjson"}:
+    if suffix in {".db", ".sqlite", ".sqlite3"}:
+        # An older single-file memlog store (v0.1 layout).
+        old = Store(path, passphrase=passphrase, apply_retention=False)
+        try:
+            for e in old:
+                yield {"text": e.text, "when": e.ts, "source": e.source, "role": e.role,
+                       "conv": e.conv, "meta": e.meta}
+        finally:
+            old.conn.close()
+    elif suffix in {".jsonl", ".ndjson"}:
         with path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
@@ -72,14 +83,14 @@ def _iter_file(path: Path) -> Iterator[dict]:
                 yield {"text": para, "when": mtime, "conv": f"file:{path.name}"}
 
 
-def ingest(store: Store, path: str | Path, source: Optional[str] = None) -> int:
+def ingest(store: Memory, path: str | Path, source: Optional[str] = None, passphrase: Optional[str] = None) -> int:
     path = Path(path)
-    records = ({**rec, "source": source or rec.get("source", path.stem)} for rec in _iter_file(path))
+    records = ({**rec, "source": source or rec.get("source", path.stem)} for rec in _iter_file(path, passphrase))
     return store.add_many(records)
 
 
 def watch(
-    store: Store,
+    store: Memory,
     path: str | Path,
     source: Optional[str] = None,
     poll_seconds: float = 1.0,

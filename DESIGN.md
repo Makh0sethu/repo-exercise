@@ -8,12 +8,34 @@ conversation for relevance, and gives usable text back.
 
 | Piece | Choice | Why |
 |---|---|---|
-| Storage | SQLite + FTS5 | One file, zero deps, fast enough for years of text. |
+| Layout | Folders: `conversations/YYYY/MM/source/conv.jsonl`, `activities/YYYY/MM/source.jsonl`, `reports/`, `index/` | Human-browsable, greppable, backup-friendly, and a month or a source can be dropped as a unit. |
+| Index | SQLite + FTS5, rebuilt from the folders | Zero deps, fast enough for years of text; a cache, never the only copy. |
 | Ranking | BM25 (built into FTS5) + recency blend | Good keyword relevance without a vector DB. |
 | Time phrases | Hand-written parser | Covers the spoken forms ("over the month", "about 3 years ago") and keeps the remainder as the topical query. |
 | Per-conversation analysis | depth (best 3 turns) + coverage (matched / total turns) | Separates "one passing mention" from "a whole conversation about it". |
 | Summary | Extractive, local | Deterministic and free. LLM prose is an opt-in layer on top. |
 | Capture | `Recorder.wrap()`, `ingest`, `watch` | In-process for your own chat loops, file tail for everything else. |
+
+## Why folders and an index, not one of them
+
+One SQLite file is the simplest thing that works, and it was v0.1. It has two
+problems for a personal memory: you cannot look at it without a tool, and
+"delete everything from that month" or "back up just my chat history" means
+SQL. Folders fix both. But folders alone make questions slow and lose BM25
+ranking. So the folders are canonical and the index is a derived cache: any
+write goes to both, any delete goes to both, and `reindex()` rebuilds the
+index from the folders whenever it is missing or stale.
+
+Each memory carries a random 16-hex `uid` written into its line of JSON and
+into the index, so a forget can find the exact line in the exact file, and a
+reindex keeps the same identities.
+
+Per-file sealing needs keys that do not cost a scrypt per file. The vault
+derives keys once per session from the salt in `vault.json` and checks them
+against a stored HMAC verifier, then seals each file with a fresh nonce
+(`crypto.seal`, format `MEMLOG2`). The single-file `Store` keeps its
+self-contained `MEMLOG1` format for standalone use and for importing old
+databases.
 
 ## Where it is weak, and what fixes it
 
@@ -26,6 +48,11 @@ conversation for relevance, and gives usable text back.
   conversation after N minutes of silence) at ingest time.
 - **Summaries read like quotes.** They are. Abstractive summaries need a
   model; `llm_summary()` is the hook, driven by `MEMLOG_LLM_MODEL`.
+- **Appending to a sealed file rewrites it.** Each add decrypts, appends and
+  re-seals the conversation's file. Fine for conversations (hundreds of
+  lines); an activity source with tens of thousands of lines a month would
+  want per-day files or an append-only sealed log. Wrap bulk imports in
+  `Vault.add_many()` so the index is written once.
 - **Capture is manual or file-based.** True background capture of other
   apps' conversations means adapters: a ChatGPT/Claude export importer, a
   browser extension, a clipboard watcher, or shell history. Each is a small
@@ -58,14 +85,16 @@ single opt-in online feature (`--llm`) needs three explicit conditions and can
 be hard-blocked with `MEMLOG_NO_NETWORK=1`. When it runs, only the rendered
 report for that question is sent, and `litellm.telemetry` is set to False.
 
-**Encryption at rest.** Whole-file, so the FTS index stays usable in memory.
-`Store` deserialises the encrypted file into a `:memory:` SQLite connection
-and re-encrypts on every commit (batched with `deferred()`). Construction,
-all from the standard library:
+**Encryption at rest.** Per file: every memory file, report and the index
+is sealed separately, and the index is deserialised into a `:memory:` SQLite
+connection so full-text search keeps working. Construction, all from the
+standard library:
 
-- scrypt (n=2^15, r=8, p=1) with a fresh 16-byte salt per write, giving a
-  32-byte encryption key and a 32-byte MAC key;
-- HMAC-SHA256 in counter mode as the keystream, fresh 16-byte nonce per write;
+- scrypt (n=2^15, r=8, p=1) over the passphrase and the vault's 16-byte salt,
+  once per session, giving a 32-byte encryption key and a 32-byte MAC key;
+  `vault.json` stores the salt and HMAC(mac_key, constant) as a verifier;
+- HMAC-SHA256 in counter mode as the keystream, fresh 16-byte nonce per file
+  per write;
 - HMAC-SHA256 over header and ciphertext, checked in constant time before any
   decryption (encrypt-then-MAC).
 
@@ -78,11 +107,12 @@ command runs, and the passphrase sits in `MEMLOG_PASSPHRASE` if you export it
 (prefer `--passphrase-file` with 0600 permissions, or the prompt). The demo
 command uses an in-memory store and writes nothing.
 
-**Retention.** The policy lives inside the database (`settings` table), so it
-travels with the file. `purge()` runs on every open and after every
-`set_retention()`. `forget()` deletes by date, conversation, source or id.
-Deletion is followed by an FTS rebuild (so old terms leave the index) and a
-`VACUUM` under `PRAGMA secure_delete`, so the file no longer holds the text.
-`wipe()` overwrites the file with random bytes and unlinks it. On SSDs and
+**Retention.** The policy lives in `vault.json`, so it travels with the
+folders. `purge()` runs on every open and after every `set_retention()`.
+`forget()` deletes by date, conversation, source or id: the matching lines
+are removed from their folder files (a file left empty is shredded and empty
+folders pruned), then the index rows go, followed by an FTS rebuild and a
+`VACUUM` under `PRAGMA secure_delete`. `wipe()` overwrites every file with
+random bytes and unlinks it. On SSDs and
 copy-on-write filesystems overwriting is best-effort, which is the real
 reason to keep the file encrypted in the first place.

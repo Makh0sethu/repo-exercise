@@ -41,10 +41,13 @@ CREATE TABLE IF NOT EXISTS entries (
     role   TEXT    NOT NULL DEFAULT 'user',
     conv   TEXT    NOT NULL DEFAULT '',
     text   TEXT    NOT NULL,
-    meta   TEXT    NOT NULL DEFAULT '{}'
+    meta   TEXT    NOT NULL DEFAULT '{}',
+    uid    TEXT    NOT NULL DEFAULT '',
+    loc    TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS entries_ts ON entries(ts);
 CREATE INDEX IF NOT EXISTS entries_conv ON entries(conv);
+CREATE INDEX IF NOT EXISTS entries_loc ON entries(loc);
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
     text, content='entries', content_rowid='id', tokenize='porter unicode61'
 );
@@ -78,6 +81,8 @@ class Entry:
     conv: str
     text: str
     meta: dict[str, Any] = field(default_factory=dict)
+    uid: str = ""   # stable id that survives a reindex
+    loc: str = ""   # vault-relative file holding this entry, if any
 
     @property
     def day(self) -> str:
@@ -96,6 +101,11 @@ def _to_ts(when: Optional[datetime | float | str]) -> float:
     return when.timestamp()
 
 
+def default_conv(source: str, ts: float) -> str:
+    """Default conversation id: one per source per day."""
+    return f"{source}:{datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d')}"
+
+
 def _row_to_entry(row: sqlite3.Row) -> Entry:
     return Entry(
         id=row["id"],
@@ -105,6 +115,8 @@ def _row_to_entry(row: sqlite3.Row) -> Entry:
         conv=row["conv"],
         text=row["text"],
         meta=json.loads(row["meta"] or "{}"),
+        uid=row["uid"] if "uid" in row.keys() else "",
+        loc=row["loc"] if "loc" in row.keys() else "",
     )
 
 
@@ -120,10 +132,12 @@ class Store:
         path: str | os.PathLike[str] = DEFAULT_DB,
         passphrase: Optional[str] = None,
         *,
+        keys: Optional[crypto.Keys] = None,
         apply_retention: bool = True,
     ):
         self.path = str(path)
         self.passphrase = passphrase or None
+        self.keys = keys
         self._deferred = 0
         self._dirty = False
         in_memory = self.path == ":memory:"
@@ -132,10 +146,10 @@ class Store:
             self._prepare_location()
 
         on_disk_encrypted = not in_memory and crypto.is_encrypted_file(self.path)
-        if on_disk_encrypted and not self.passphrase:
+        if on_disk_encrypted and not (self.passphrase or self.keys):
             raise LockedError(f"{self.path} is encrypted; a passphrase is required")
 
-        if in_memory or not self.passphrase:
+        if in_memory or not (self.passphrase or self.keys):
             if not in_memory:
                 self._touch_private(self.path)
             self.conn = sqlite3.connect(self.path)
@@ -145,8 +159,7 @@ class Store:
             self.conn = sqlite3.connect(":memory:")
             self.encrypted = True
             if on_disk_encrypted:
-                blob = Path(self.path).read_bytes()
-                self.conn.deserialize(crypto.decrypt_bytes(blob, self.passphrase))
+                self.conn.deserialize(self._open(Path(self.path).read_bytes()))
             elif Path(self.path).exists() and Path(self.path).stat().st_size > 0:
                 # A plaintext database given a passphrase: take it over and encrypt it.
                 plain = sqlite3.connect(self.path)
@@ -159,6 +172,7 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA secure_delete = ON")
         self.conn.executescript(_SCHEMA)
+        self._migrate()
         if self.encrypted:
             self._persist()  # also converts a plaintext file we took over
         elif not in_memory:
@@ -167,6 +181,28 @@ class Store:
             self.purge()
 
     # -- security / lifecycle -------------------------------------------
+
+    def _migrate(self) -> None:
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(entries)")}
+        for col in ("uid", "loc"):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE entries ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+        self.conn.commit()
+
+    def _seal(self, data: bytes) -> bytes:
+        if self.keys is not None:
+            return crypto.seal(data, self.keys)
+        assert self.passphrase
+        return crypto.encrypt_bytes(data, self.passphrase)
+
+    def _open(self, blob: bytes) -> bytes:
+        if blob.startswith(crypto.MAGIC2):
+            if self.keys is None:
+                raise LockedError(f"{self.path} belongs to a vault; open it through the vault")
+            return crypto.unseal(blob, self.keys)
+        if self.passphrase is None:
+            raise LockedError(f"{self.path} needs a passphrase, not vault keys")
+        return crypto.decrypt_bytes(blob, self.passphrase)
 
     def _prepare_location(self) -> None:
         parent = Path(self.path).parent
@@ -199,8 +235,7 @@ class Store:
     def _persist(self) -> None:
         if not self.encrypted:
             return
-        assert self.passphrase
-        crypto.write_private(self.path, crypto.encrypt_bytes(self.conn.serialize(), self.passphrase))
+        crypto.write_private(self.path, self._seal(self.conn.serialize()))
         self._dirty = False
 
     @contextlib.contextmanager
@@ -229,12 +264,12 @@ class Store:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def change_passphrase(self, new_passphrase: Optional[str]) -> None:
-        """Re-encrypt with a new passphrase, or decrypt to plaintext when ``None``."""
+    def change_passphrase(self, new_passphrase: Optional[str], *, keys: Optional[crypto.Keys] = None) -> None:
+        """Re-encrypt with a new passphrase (or vault keys), or decrypt to plaintext when both are None."""
         if self.path == ":memory:":
             raise ValueError("an in-memory store has no file to protect")
         self.conn.commit()
-        if new_passphrase:
+        if new_passphrase or keys:
             if not self.encrypted:
                 data = self.conn.serialize()
                 self.conn.close()
@@ -245,7 +280,8 @@ class Store:
                 for suffix in ("", "-journal", "-wal", "-shm"):
                     crypto.shred(self.path + suffix)
                 self.encrypted = True
-            self.passphrase = new_passphrase
+            self.passphrase = new_passphrase or None
+            self.keys = keys
             self._persist()
             return
         # Decrypting to plaintext: write a fresh file, private permissions.
@@ -263,6 +299,7 @@ class Store:
         self.conn.execute("PRAGMA secure_delete = ON")
         self.encrypted = False
         self.passphrase = None
+        self.keys = None
         self._chmod_private()
 
     def wipe(self) -> None:
@@ -311,15 +348,13 @@ class Store:
         cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
         return self.forget(before=cutoff)
 
-    def forget(
-        self,
-        *,
-        before: Optional[datetime] = None,
-        conv: Optional[str] = None,
-        source: Optional[str] = None,
-        ids: Optional[Iterable[int]] = None,
-    ) -> int:
-        """Delete entries matching every given filter. Returns the number deleted."""
+    @staticmethod
+    def _forget_filter(
+        before: Optional[datetime],
+        conv: Optional[str],
+        source: Optional[str],
+        ids: Optional[Iterable[int]],
+    ) -> tuple[str, list[Any]]:
         clauses, args = [], []
         if before is not None:
             clauses.append("ts < ?")
@@ -332,13 +367,36 @@ class Store:
             args.append(source)
         if ids is not None:
             ids = list(ids)
-            if not ids:
-                return 0
-            clauses.append(f"id IN ({','.join('?' * len(ids))})")
+            clauses.append(f"id IN ({','.join('?' * len(ids))})" if ids else "0")
             args.extend(ids)
         if not clauses:
             raise ValueError("refusing to forget everything without a filter; use wipe()")
-        cur = self.conn.execute(f"DELETE FROM entries WHERE {' AND '.join(clauses)}", args)
+        return " AND ".join(clauses), args
+
+    def matching(
+        self,
+        *,
+        before: Optional[datetime] = None,
+        conv: Optional[str] = None,
+        source: Optional[str] = None,
+        ids: Optional[Iterable[int]] = None,
+    ) -> list[Entry]:
+        """The entries ``forget`` would delete with the same filters."""
+        where, args = self._forget_filter(before, conv, source, ids)
+        rows = self.conn.execute(f"SELECT * FROM entries WHERE {where} ORDER BY ts", args).fetchall()
+        return [_row_to_entry(r) for r in rows]
+
+    def forget(
+        self,
+        *,
+        before: Optional[datetime] = None,
+        conv: Optional[str] = None,
+        source: Optional[str] = None,
+        ids: Optional[Iterable[int]] = None,
+    ) -> int:
+        """Delete entries matching every given filter. Returns the number deleted."""
+        where, args = self._forget_filter(before, conv, source, ids)
+        cur = self.conn.execute(f"DELETE FROM entries WHERE {where}", args)
         deleted = cur.rowcount
         self.conn.commit()  # always: an open write transaction would block backup()/serialize()
         if deleted:
@@ -361,17 +419,18 @@ class Store:
         role: str = "user",
         conv: str = "",
         meta: Optional[dict[str, Any]] = None,
+        uid: str = "",
+        loc: str = "",
     ) -> int:
         text = text.strip()
         if not text:
             raise ValueError("refusing to store an empty entry")
         ts = _to_ts(when)
         if not conv:
-            # Default conversation: one per source per day.
-            conv = f"{source}:{datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d')}"
+            conv = default_conv(source, ts)
         cur = self.conn.execute(
-            "INSERT INTO entries(ts, source, role, conv, text, meta) VALUES (?,?,?,?,?,?)",
-            (ts, source, role, conv, text, json.dumps(meta or {})),
+            "INSERT INTO entries(ts, source, role, conv, text, meta, uid, loc) VALUES (?,?,?,?,?,?,?,?)",
+            (ts, source, role, conv, text, json.dumps(meta or {}), uid, loc),
         )
         self._commit()
         return int(cur.lastrowid)
@@ -390,6 +449,8 @@ class Store:
                     source=rec.pop("source", "import"),
                     role=rec.pop("role", "user"),
                     conv=rec.pop("conv", "") or rec.pop("conversation_id", ""),
+                    uid=rec.pop("uid", ""),
+                    loc=rec.pop("loc", ""),
                     meta=rec.pop("meta", None) or rec or None,
                 )
                 n += 1
