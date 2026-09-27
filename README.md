@@ -10,8 +10,9 @@ Record what you talk about and what you do, then ask questions like
 Rust about 3 years ago?"* and get back the relevant conversations, a
 per-conversation relevance analysis, and a readable summary.
 
-Pure standard library. Storage is one SQLite file with a full-text index.
-No API keys needed; an LLM can optionally polish the summary.
+Pure standard library (Python 3.11+). Storage is one SQLite file with a full-text index.
+Local only: nothing goes online and there is no telemetry. The file can be
+encrypted with a passphrase, and you decide how long memories are kept.
 
 ### Try it in ten seconds
 
@@ -56,9 +57,60 @@ rec.activity("Read the Rust book chapter on lifetimes")
 
 `generate_response` can be the LiteLLM function from `ProgrammaticPrompting1.ipynb`.
 
-### Optional LLM summary
+### Security and privacy
+
+**Nothing goes online.** The package imports no networking modules, and a test
+(`tests/test_security.py`) fails the build if one is ever added. There is no
+telemetry, no update check, no analytics. `memlog stats` reports whether
+anything *could* leave the machine under the current configuration.
+
+**Encrypt the memory file.**
 
 ```bash
+memlog lock                      # prompts for a passphrase, encrypts ~/.memlog/memlog.db
+export MEMLOG_PASSPHRASE=...     # or --passphrase-file FILE, or type it when prompted
+memlog ask "what did I do this week?"
+memlog lock                      # again to change the passphrase
+memlog unlock --yes              # back to plain SQLite, if you ever want that
+```
+
+While locked, the database is decrypted into memory only for the life of the
+command and re-encrypted on every write. The file on disk starts with
+`MEMLOG1`, not `SQLite format 3`, and contains no plaintext. The key is derived
+with scrypt; encryption and integrity use HMAC-SHA256 (see `memlog/crypto.py`
+for the exact construction). A wrong passphrase or a tampered file is refused
+outright. Files and the `~/.memlog` directory are owner-only (0600 / 0700),
+encrypted or not.
+
+**Decide how long to keep memories.**
+
+```bash
+memlog retention 90              # keep 90 days; older entries are purged now and on every open
+memlog retention                 # show the policy
+memlog retention off             # keep forever (the default)
+memlog forget --before "6 months ago"
+memlog forget --older-than 30 --source shell
+memlog forget --conv chat:2026-09-12
+memlog forget --id 42
+memlog wipe --yes                # delete everything and shred the file
+```
+
+Deleted entries are really gone: SQLite's `secure_delete` overwrites the freed
+pages, the search index is rebuilt so old terms leave it, and the file is
+compacted. `wipe` overwrites the file with random bytes before unlinking it.
+
+**The one online feature is off unless you switch it on.** An LLM prose summary
+needs `--llm` on the command line *and* `MEMLOG_LLM_MODEL` in the environment
+*and* `litellm` installed. Only the rendered report for that one question is
+sent, and the library's own telemetry is disabled first. To make it impossible
+regardless of configuration:
+
+```bash
+export MEMLOG_NO_NETWORK=1
+```
+
+```bash
+# if you do want it:
 pip install litellm
 export MEMLOG_LLM_MODEL=gemini/gemini-2.5-flash    # plus that provider's API key
 memlog ask "what have I been up to this month?" --llm

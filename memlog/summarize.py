@@ -1,9 +1,13 @@
 """Turn a RecallResult into readable text.
 
 The default summary is extractive and fully local: it picks the sentences
-that carry the most of the matched conversations' vocabulary. If the
-environment variable MEMLOG_LLM_MODEL is set and ``litellm`` is importable,
-``llm_summary`` can rewrite that into prose with a model.
+that carry the most of the matched conversations' vocabulary.
+
+``llm_summary`` is the one function in memlog that can send data off the
+machine. It runs only when all of these hold: the caller asks for it
+explicitly, MEMLOG_LLM_MODEL names a model, ``litellm`` is installed, and
+MEMLOG_NO_NETWORK is not set. Library telemetry is switched off before the
+call, and only the rendered report for that one question is sent.
 """
 
 from __future__ import annotations
@@ -101,15 +105,30 @@ def render_report(result: RecallResult, *, max_conversations: int = 6, width: in
     return "\n".join(lines)
 
 
+class NetworkDisabled(Exception):
+    """MEMLOG_NO_NETWORK is set; nothing may leave this machine."""
+
+
+def network_allowed() -> bool:
+    return os.environ.get("MEMLOG_NO_NETWORK", "").strip().lower() not in {"1", "true", "yes", "on"}
+
+
 def llm_summary(result: RecallResult, model: Optional[str] = None, max_tokens: int = 400) -> Optional[str]:
-    """Rewrite the report as prose with an LLM. Returns None when no model is configured or available."""
+    """Rewrite the report as prose with an LLM. Returns None when no model is configured or available.
+
+    Raises ``NetworkDisabled`` when MEMLOG_NO_NETWORK is set, whatever else is configured.
+    """
+    if not network_allowed():
+        raise NetworkDisabled("MEMLOG_NO_NETWORK is set; refusing to send memories to a model")
     model = model or os.environ.get("MEMLOG_LLM_MODEL")
     if not model:
         return None
     try:
+        import litellm  # type: ignore
         from litellm import completion  # type: ignore
     except ImportError:
         return None
+    litellm.telemetry = False
     context = render_report(result, max_conversations=10)
     messages = [
         {
