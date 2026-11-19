@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vulnwatch Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16191d;--mute:#5d6672;--line:#e1e5ea;
+--crit:#b3261e;--high:#d9622b;--mod:#b98900;--low:#2e7d6b;--ok:#2e7d6b;--accent:#2f5fd0}
+@media (prefers-color-scheme:dark){:root{--bg:#101215;--card:#181b20;--ink:#e8eaed;--mute:#9aa3ae;--line:#272c33;
+--crit:#ff6b60;--high:#ff9a5c;--mod:#e6bd3a;--low:#5fc4ad;--ok:#5fc4ad;--accent:#7ea2ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:22px;margin:0}h2{font-size:16px;margin:32px 0 12px}
+.sub{color:var(--mute);font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.tile b{display:block;font-size:28px;line-height:1.1}.tile span{color:var(--mute);font-size:13px}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:8px 0 4px}
+.bar i{display:block}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mute)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+input,select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+input{flex:1;min-width:180px}
+.pkg{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+.pkg summary{cursor:pointer;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pkg .name{font-weight:600}.pkg .ver{color:var(--mute);font-family:ui-monospace,monospace;font-size:13px}
+.pkg .eco{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.sp{flex:1}
+.badge{font-size:11px;font-weight:700;border-radius:4px;padding:1px 7px;color:#fff}
+.CRITICAL{background:var(--crit)}.HIGH{background:var(--high)}.MODERATE,.MEDIUM{background:var(--mod)}.LOW{background:var(--low)}.UNKNOWN{background:var(--mute)}
+.clean{color:var(--ok);font-size:13px}
+.body{padding:0 14px 12px;border-top:1px solid var(--line)}
+.v{padding:10px 0;border-bottom:1px solid var(--line)}.v:last-child{border:0}
+.v a,.story a{color:var(--accent);text-decoration:none}.v a:hover,.story a:hover{text-decoration:underline}
+.v .meta{color:var(--mute);font-size:12px}
+.story{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:8px}
+.chip{font-size:11px;background:var(--line);border-radius:4px;padding:1px 6px;margin-right:4px}
+.empty{color:var(--mute);padding:12px 0}
+</style></head><body><main>
+<h1>Vulnwatch</h1>
+<div class="sub" id="meta"></div>
+<div class="tiles" id="tiles"></div>
+<div class="tile"><div class="bar" id="bar"></div><div class="legend" id="legend"></div></div>
+
+<h2>Packages</h2>
+<div class="tools">
+  <input id="q" placeholder="Filter packages…" aria-label="Filter packages">
+  <select id="f" aria-label="Show"><option value="vuln">Vulnerable only</option><option value="all">All packages</option></select>
+</div>
+<div id="pkgs"></div>
+
+<h2>Recent security stories mentioning your packages</h2>
+<div id="news"></div>
+<div class="sub" id="feeds" style="margin-top:16px"></div>
+</main>
+<script>
+const D=/*__DATA__*/null;
+const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const SEV=[["CRITICAL","var(--crit)"],["HIGH","var(--high)"],["MODERATE","var(--mod)"],["LOW","var(--low)"],["UNKNOWN","var(--mute)"]];
+const norm=s=>s==="MEDIUM"?"MODERATE":s;
+const all=D.packages.flatMap(p=>p.vulns.map(v=>norm(v.severity)));
+const cnt=Object.fromEntries(SEV.map(([s])=>[s,all.filter(x=>x===s).length]));
+const vulnPk=D.packages.filter(p=>p.vulns.length).length;
+$("meta").textContent=`Scanned ${new Date(D.generated).toLocaleString()} · news window ${D.days} days · data from OSV.dev, security RSS feeds, Hacker News`;
+$("tiles").innerHTML=[[D.packages.length,"packages tracked"],[vulnPk,"with known vulns"],[all.length,"total advisories"],[cnt.CRITICAL+cnt.HIGH,"critical / high"],[D.news.length,"related stories"]]
+ .map(([n,l])=>`<div class="tile"><b>${n}</b><span>${l}</span></div>`).join("");
+$("bar").innerHTML=SEV.filter(([s])=>cnt[s]).map(([s,c])=>`<i style="width:${cnt[s]/all.length*100}%;background:${c}"></i>`).join("");
+$("legend").innerHTML=all.length?SEV.map(([s,c])=>`<span><span class="dot" style="background:${c}"></span>${s.toLowerCase()} ${cnt[s]}</span>`).join(""):"No known vulnerabilities found.";
+function render(){
+  const q=$("q").value.toLowerCase(), onlyV=$("f").value==="vuln";
+  const rows=D.packages.filter(p=>(!onlyV||p.vulns.length)&&p.name.toLowerCase().includes(q));
+  $("pkgs").innerHTML=rows.map(p=>{
+    const topName=p.vulns.length?SEV.find(([s])=>(({CRITICAL:4,HIGH:3,MODERATE:2,LOW:1,UNKNOWN:0})[s])===p.top)[0]:null;
+    return `<details class="pkg"><summary><span class="name">${esc(p.name)}</span><span class="ver">${esc(p.version)}</span><span class="eco">${esc(p.ecosystem)}</span><span class="sp"></span>
+      ${p.news.length?`<span class="chip">${p.news.length} news</span>`:""}
+      ${p.vulns.length?`<span class="badge ${topName}">${p.vulns.length} · ${topName}</span>`:`<span class="clean">✓ clean</span>`}</summary>
+      <div class="body">${p.vulns.map(v=>`<div class="v"><span class="badge ${norm(v.severity)}">${norm(v.severity)}</span>
+        <a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.id)}</a> ${v.aliases.map(a=>`<span class="chip">${esc(a)}</span>`).join("")}
+        <div>${esc(v.summary)}</div><div class="meta">${v.published?"published "+esc(v.published)+" · ":""}${v.fixed.length?"fixed in "+v.fixed.map(esc).join(", "):"no fixed version listed"}</div></div>`).join("")||'<div class="empty">No known vulnerabilities for this version.</div>'}
+      ${p.news.map(n=>`<div class="v"><span class="chip">${esc(n.source)}</span><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a></div>`).join("")}
+      </div></details>`}).join("")||'<div class="empty">Nothing to show.</div>';
+}
+$("q").oninput=render;$("f").onchange=render;render();
+$("news").innerHTML=D.news.map(n=>`<div class="story"><span class="chip">${esc(n.source)}</span><span class="meta sub">${new Date(n.date).toLocaleDateString()}</span><br>
+  <a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a><div>${n.matches.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div></div>`).join("")
+  ||'<div class="empty">No recent stories matched your packages.</div>';
+$("feeds").textContent="Feeds: "+Object.entries(D.feeds).map(([k,v])=>`${k} (${v})`).join(" · ");
+</script></body></html>
