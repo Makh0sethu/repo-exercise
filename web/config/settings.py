@@ -93,6 +93,8 @@ SENTINEL_GITHUB_CLIENT_ID = os.environ.get("SENTINEL_GITHUB_CLIENT_ID", "")
 SENTINEL_GITHUB_CLIENT_SECRET = os.environ.get("SENTINEL_GITHUB_CLIENT_SECRET", "")
 # Who may sign in, and as what: "alice:admin,bob:operator,carol:auditor". Empty = nobody.
 SENTINEL_GITHUB_USERS = os.environ.get("SENTINEL_GITHUB_USERS", "")
+# Where scanner binaries live, in addition to PATH (path-separator list).
+PIPELINE_TOOL_DIRS = [d for d in os.environ.get("SENTINEL_TOOL_DIRS", "").split(os.pathsep) if d]
 AUDIT_EVIDENCE_DIR = Path(os.environ.get("SENTINEL_EVIDENCE_DIR", BASE_DIR / "evidence"))
 LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)

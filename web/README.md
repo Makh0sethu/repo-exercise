@@ -129,6 +129,29 @@ How it stays safe:
 
 **Runs page:** `/server/` lists runs with who started them, the exact commit, each step's reason and exact command. Runs happen in a background thread for now (a proper job queue comes with the Docker tools), so refresh to see one finish.
 
+## Scanners (security pipeline)
+`python manage.py run_pipeline <target>` runs these in order. Each step records its reason, exact command, tool version and binary hash on the audit trail.
+
+| Step | Tool | What it does | Runs target code? |
+|---|---|---|---|
+| `git_clone` | git | Fetch source, pin the commit (required: nothing else runs without it) | no |
+| `secrets_scan` | Gitleaks | Keys/tokens in the repo and the history that was cloned. **Values are redacted and never stored** | no |
+| `sast_python` | Bandit | Insecure Python patterns. Source lines are not kept; quoted passwords in messages are scrubbed | no, parses only |
+| `pip_audit` | pip-audit | Pinned requirements vs PyPI advisories (`--no-deps --disable-pip`: nothing installed) | no |
+| `npm_audit` | npm | Lockfile vs npm advisories (`--package-lock-only`, scripts off) | no |
+| `dependency_scan` | OSV.dev | Cross-check of every dependency file | no |
+
+**Install:**
+```
+pip install -r requirements-tools.txt
+go install github.com/zricethezav/gitleaks/v8@v8.21.2     # needs Go; or download the release binary
+set SENTINEL_TOOL_DIRS=C:\path\to\tools      # optional: extra folders to look for scanner binaries
+```
+**Rules the pipeline follows**
+- A scanner that finds things is a *result*. A scanner that can't run (missing, or can't reach its advisory service) **fails its step**; it is never shown as clean. One failed scanner doesn't stop the others; a failed clone does.
+- Scanners get a minimal environment: no credentials. Only the two that call advisory services also get proxy/CA settings, and only the *names* of those variables are recorded.
+- Clone depth defaults to 1, so Gitleaks only sees the latest commit. Set `"depth": N` on the `git_clone` step to scan more history.
+
 ## Assets
 - `static/scanner/logos/*.png`: 128 px PNGs made from [Devicon](https://devicon.dev) (MIT, see `DEVICON-LICENSE.txt`). The logos are trademarks of their projects. Packages without their own logo get their ecosystem's logo (Python or Node.js). Add a logo by dropping a PNG in and mapping it in `scanner/logos.py`.
 - `static/scanner/vendor/material-web.js`: `@material/web` 2.2.0 bundled with esbuild, so the server needs no CDN.

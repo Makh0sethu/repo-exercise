@@ -1,0 +1,4 @@
+# Scanners the security pipeline runs. Install these on the server, separate from the app's own requirements.
+bandit==1.8.0
+pip-audit==2.8.0
+# Also needed on PATH (see README): gitleaks v8.21.2, git, and npm.

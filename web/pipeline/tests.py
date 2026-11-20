@@ -1,5 +1,6 @@
 import subprocess
 import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -24,6 +25,12 @@ def make_repo(root: Path) -> str:
     for cmd in (["init", "-q", "-b", "main"], ["add", "-A", "-f"], ["commit", "-q", "-m", "init"]):
         subprocess.run(["git", "-C", str(root), *cmd], check=True, env=env)
     return str(root)
+
+
+TWO_STEP = [
+    {"tool": "git_clone", "required": True, "reason": "Fetch the exact source to test and pin the commit"},
+    {"tool": "dependency_scan", "reason": "Look up every dependency on OSV.dev for known vulnerabilities"},
+]
 
 
 def fake_osv(url, body=None, timeout=20):
@@ -63,7 +70,7 @@ class PipelineTests(TestCase):
 
     def run_it(self):
         with mock.patch("scanner.scan._get_json", side_effect=fake_osv):
-            return execute(create_run(self.target, requested_by="alice"))
+            return execute(create_run(self.target, requested_by="alice", pipeline=TWO_STEP))
 
     def test_full_run_clones_pins_commit_and_finds_vulnerabilities(self):
         run = self.run_it()
@@ -112,7 +119,7 @@ class PipelineTests(TestCase):
 
     def test_osv_outage_fails_the_step_instead_of_reporting_clean(self):
         with mock.patch("scanner.scan._get_json", side_effect=OSError("offline")):
-            run = execute(create_run(self.target))
+            run = execute(create_run(self.target, pipeline=TWO_STEP))
         self.assertEqual(run.status, "failed")
         self.assertEqual(run.findings.count(), 0)
         self.assertEqual(run.steps.get(tool="dependency_scan").status, "failed")
@@ -137,7 +144,7 @@ class SecretHandlingTests(TestCase):
             return subprocess.CompletedProcess(argv, 0, "", "")
         with mock.patch.dict("os.environ", {"SENTINEL_GITHUB_TOKEN": secret}), \
              mock.patch("pipeline.adapters.subprocess.run", side_effect=fake_run):
-            run = execute(create_run(target))
+            run = execute(create_run(target, pipeline=TWO_STEP))
         self.assertIn("GIT_CONFIG_VALUE_0", seen["env"])           # delivered via env...
         everything = str(list(AuditEvent.objects.values_list("payload", flat=True))) + str(list(run.steps.values_list("argv", flat=True)))
         for art in EvidenceArtifact.objects.all():
@@ -151,5 +158,172 @@ class SecretHandlingTests(TestCase):
         target = Target.objects.create(name="priv2", git_url="https://github.com/o/private", private=True)
         with mock.patch.dict("os.environ", {}, clear=False) as env:
             env.pop("SENTINEL_GITHUB_TOKEN", None)
-            run = execute(create_run(target))
+            run = execute(create_run(target, pipeline=TWO_STEP))
         self.assertEqual(run.status, "failed")
+
+
+# ---------------------------------------------------------------- scanners
+import json as _json
+import os
+
+from .adapters import ToolMissing, find_tool, npm_audit, pip_audit, sast_python, secrets_scan
+
+
+def tool_available(name):
+    try:
+        find_tool(name)
+        return True
+    except ToolMissing:
+        return False
+
+
+def ctx_for(src, ws):
+    return {"workspace": Path(ws), "values": {"src": str(src)}, "target": None}
+
+
+def planted_token():
+    return "ghp_" + "aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3fG5"[:36]     # built at runtime: no literal secret in this file
+
+
+class ScannerBase(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.src = Path(self.tmp.name) / "src"; self.src.mkdir()
+        self.ws = Path(self.tmp.name) / "ws"; self.ws.mkdir()
+        self.dirs = [d for d in os.environ.get("SENTINEL_TOOL_DIRS", "").split(os.pathsep) if d]
+        o = override_settings(PIPELINE_TOOL_DIRS=self.dirs); o.enable(); self.addCleanup(o.disable)
+
+
+@unittest.skipUnless(tool_available("gitleaks"), "gitleaks not installed")
+class SecretsScanTests(ScannerBase):
+    def test_finds_a_planted_secret_and_never_keeps_its_value(self):
+        token = planted_token()
+        (self.src / "config.py").write_text(f'GITHUB_TOKEN = "{token}"\n')
+        for cmd in (["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(self.src), *cmd], check=True)
+        r = secrets_scan({}, ctx_for(self.src, self.ws))
+        self.assertTrue(r.ok)
+        self.assertEqual(len(r.findings), 1)
+        self.assertEqual(r.findings[0]["location"], "config.py:1")
+        self.assertEqual(r.findings[0]["severity"], "high")
+        self.assertNotIn(token, _json.dumps([r.findings, r.summary]) + r.stdout + r.stderr)   # value never stored
+        self.assertEqual(len(r.summary["binary_sha256"]), 64)                                 # which binary ran is recorded
+
+    def test_clean_repo_reports_no_secrets(self):
+        (self.src / "a.py").write_text("print('hello')\n")
+        for cmd in (["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(self.src), *cmd], check=True)
+        r = secrets_scan({}, ctx_for(self.src, self.ws))
+        self.assertTrue(r.ok); self.assertEqual(r.findings, [])
+
+
+@unittest.skipUnless(tool_available("bandit"), "bandit not installed")
+class SastTests(ScannerBase):
+    def test_finds_insecure_code_without_executing_it_or_keeping_the_source_line(self):
+        marker = self.tmp.name + "/EXECUTED"
+        (self.src / "app.py").write_text(
+            f'import subprocess\nopen({marker!r}, "w")   # would exist if the scanner ran this code\n'
+            'password = "hunter2hunter2"\nsubprocess.call(input(), shell=True)\n')
+        r = sast_python({}, ctx_for(self.src, self.ws))
+        self.assertTrue(r.ok)
+        ids = {f["detail"]["test_id"] for f in r.findings}
+        self.assertTrue({"B602", "B105"} <= ids, ids)
+        self.assertFalse(os.path.exists(marker))                                  # parsed, never executed
+        self.assertNotIn("hunter2hunter2", _json.dumps(r.findings) + r.stdout)    # source line (and its secret) not kept
+        self.assertIn("app.py:", r.findings[0]["location"])
+
+    def test_node_modules_and_git_are_skipped(self):
+        (self.src / "node_modules").mkdir(); (self.src / "node_modules" / "x.py").write_text("eval(input())\n")
+        r = sast_python({}, ctx_for(self.src, self.ws))
+        self.assertEqual(r.findings, [])
+
+
+class MissingToolTests(ScannerBase):
+    def test_a_missing_scanner_fails_the_step_and_is_never_clean(self):
+        with override_settings(PIPELINE_TOOL_DIRS=[]), mock.patch("pipeline.adapters.shutil.which", return_value=None):
+            for adapter in (secrets_scan, sast_python, pip_audit, npm_audit):
+                r = adapter({}, ctx_for(self.src, self.ws))
+                self.assertFalse(r.ok, adapter.__name__)
+                self.assertEqual(r.summary["error"], "tool missing")
+                self.assertEqual(r.findings, [])
+
+
+class AuditToolTests(ScannerBase):
+    def fake_tool(self, stdout, code=1):
+        return mock.patch("pipeline.adapters.subprocess.run", return_value=subprocess.CompletedProcess([], code, stdout, ""))
+
+    def test_pip_audit_turns_advisories_into_findings(self):
+        (self.src / "requirements.txt").write_text("requests==2.19.0\n")
+        out = _json.dumps({"dependencies": [{"name": "requests", "version": "2.19.0", "vulns": [
+            {"id": "PYSEC-2018-28", "aliases": ["CVE-2018-18074"], "fix_versions": ["2.20.0"], "description": "leaks Authorization"}]}]})
+        with mock.patch("pipeline.adapters.find_tool", return_value="/bin/true"), \
+             mock.patch("pipeline.adapters.tool_info", return_value={"binary_sha256": "0" * 64, "reported_version": "x"}), self.fake_tool(out):
+            r = pip_audit({}, ctx_for(self.src, self.ws))
+        self.assertTrue(r.ok)
+        self.assertEqual((r.findings[0]["severity"], r.findings[0]["detail"]["fixed"]), ("unrated", ["2.20.0"]))
+        self.assertIn("CVE-2018-18074", r.findings[0]["title"])
+
+    def test_pip_audit_that_could_not_read_anything_is_a_failure_not_clean(self):
+        (self.src / "requirements.txt").write_text("requests\n")        # unpinned: pip-audit refuses it
+        with mock.patch("pipeline.adapters.find_tool", return_value="/bin/true"), \
+             mock.patch("pipeline.adapters.tool_info", return_value={}), self.fake_tool("", 1):
+            r = pip_audit({}, ctx_for(self.src, self.ws))
+        self.assertFalse(r.ok)
+
+    def test_npm_audit_maps_severity_and_fix(self):
+        (self.src / "package-lock.json").write_text("{}")
+        out = _json.dumps({"vulnerabilities": {"lodash": {"severity": "high", "isDirect": True, "range": "<4.17.21",
+                           "via": [{"title": "Command Injection in lodash", "url": "https://github.com/advisories/GHSA-35jh"}],
+                           "fixAvailable": {"name": "lodash", "version": "4.17.21"}}}})
+        with mock.patch("pipeline.adapters.find_tool", return_value="/bin/true"), \
+             mock.patch("pipeline.adapters.tool_info", return_value={}), self.fake_tool(out):
+            r = npm_audit({}, ctx_for(self.src, self.ws))
+        self.assertTrue(r.ok)
+        self.assertEqual((r.findings[0]["severity"], r.findings[0]["detail"]["fix"]["version"]), ("high", "4.17.21"))
+
+    def test_npm_audit_registry_error_is_a_failure_not_clean(self):
+        (self.src / "package-lock.json").write_text("{}")
+        out = _json.dumps({"error": {"code": "ENOTFOUND", "summary": "registry unreachable"}})
+        with mock.patch("pipeline.adapters.find_tool", return_value="/bin/true"), \
+             mock.patch("pipeline.adapters.tool_info", return_value={}), self.fake_tool(out):
+            r = npm_audit({}, ctx_for(self.src, self.ws))
+        self.assertFalse(r.ok)
+
+
+class PipelineFlowTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        o = override_settings(AUDIT_EVIDENCE_DIR=self.tmp.name); o.enable(); self.addCleanup(o.disable)
+        self.repo = make_repo(Path(self.tmp.name) / "repo")
+        self.target = Target.objects.create(name="t", git_url="https://github.com/o/t")
+        p = mock.patch("pipeline.adapters.check_git_url", return_value=self.repo); p.start(); self.addCleanup(p.stop)
+
+    def test_one_failing_scanner_does_not_stop_the_others(self):
+        steps = [{"tool": "git_clone", "required": True, "reason": "r"}, {"tool": "sast_python", "reason": "r"},
+                 {"tool": "dependency_scan", "reason": "r"}]
+        with mock.patch("pipeline.adapters.find_tool", side_effect=ToolMissing("bandit not installed")), \
+             mock.patch("scanner.scan._get_json", side_effect=fake_osv):
+            run = execute(create_run(self.target, pipeline=steps))
+        self.assertEqual(run.status, "failed")                                   # the run is not green...
+        self.assertEqual(list(run.steps.values_list("status", flat=True)), ["passed", "failed", "passed"])  # ...but the rest ran
+
+    def test_default_pipeline_lists_every_scanner_with_a_reason(self):
+        from .runner import DEFAULT_PIPELINE
+        self.assertEqual([s["tool"] for s in DEFAULT_PIPELINE],
+                         ["git_clone", "secrets_scan", "sast_python", "pip_audit", "npm_audit", "dependency_scan"])
+        self.assertTrue(all(s["reason"] for s in DEFAULT_PIPELINE))
+
+
+class EnvIsolationTests(TestCase):
+    def test_only_network_tools_get_proxy_settings_and_no_credentials(self):
+        from .adapters import _scrub_env
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "http://proxy:3128", "SSL_CERT_FILE": "/ca.pem",
+                                          "SENTINEL_GITHUB_TOKEN": "tok", "AWS_SECRET_ACCESS_KEY": "k", "DJANGO_SECRET_KEY": "s"}, clear=True):
+            offline = _scrub_env({"workspace": Path("/w")})
+            ctx = {"workspace": Path("/w")}
+            net = _scrub_env(ctx, network=True)
+        self.assertNotIn("HTTPS_PROXY", offline)
+        self.assertEqual(net["HTTPS_PROXY"], "http://proxy:3128")
+        for secret in ("SENTINEL_GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "DJANGO_SECRET_KEY"):
+            self.assertNotIn(secret, offline); self.assertNotIn(secret, net)
+        self.assertEqual(ctx["network_env_passed"], ["HTTPS_PROXY", "SSL_CERT_FILE"])      # names only, never values

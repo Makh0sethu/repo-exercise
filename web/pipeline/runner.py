@@ -14,8 +14,12 @@ from .gitsafe import UnsafeTarget
 from .models import Finding, Run, Step
 
 DEFAULT_PIPELINE = [
-    {"tool": "git_clone", "reason": "Fetch the exact source to test and pin the commit"},
-    {"tool": "dependency_scan", "reason": "Look up every dependency on OSV.dev for known vulnerabilities"},
+    {"tool": "git_clone", "required": True, "reason": "Fetch the exact source to test and pin the commit"},
+    {"tool": "secrets_scan", "reason": "Find API keys, tokens and passwords committed to the repo (Gitleaks)"},
+    {"tool": "sast_python", "reason": "Find insecure patterns in Python code without running it (Bandit)"},
+    {"tool": "pip_audit", "reason": "Check pinned Python dependencies for known vulnerabilities (pip-audit, PyPI advisories)"},
+    {"tool": "npm_audit", "reason": "Check npm lockfile dependencies for known vulnerabilities (npm audit, lockfile only)"},
+    {"tool": "dependency_scan", "reason": "Cross-check every dependency file on OSV.dev"},
 ]
 
 
@@ -54,7 +58,7 @@ def execute(run: Run) -> Run:
             err = store_evidence(res.stderr, label=f"{spec['tool']} stderr")
             step.argv, step.exit_code, step.summary = res.argv, res.exit_code, res.summary
             step.stdout_sha256, step.stderr_sha256 = out.sha256, err.sha256
-            step.status = "passed" if res.exit_code == 0 else "failed"
+            step.status = "passed" if res.ok else "failed"
             step.finished_at = timezone.now()
             step.save()
             for f in res.findings:
@@ -66,12 +70,13 @@ def execute(run: Run) -> Run:
             record("step.finished", actor="system", obj=step,
                    payload={"run": run.pk, "tool": spec["tool"], "argv": res.argv, "exit_code": res.exit_code,
                             "stdout": out.sha256, "stderr": err.sha256, "summary": res.summary, "findings": len(res.findings)})
-            if res.values.get("commit_sha"):
+            if res.values.get("commit_sha"):  # noqa
                 run.commit_sha = res.values["commit_sha"]; run.save(update_fields=["commit_sha"])
             ctx["values"].update(res.values)
-            if res.exit_code != 0:
+            if not res.ok:
                 failed = True
-                break
+                if spec.get("required"):      # no source means nothing later can run
+                    break
     finally:
         shutil.rmtree(workdir, ignore_errors=True)   # evidence is kept; the checkout is not
     run.status = "failed" if failed else "passed"
