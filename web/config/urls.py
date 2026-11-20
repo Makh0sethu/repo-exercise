@@ -7,5 +7,7 @@ admin.site.site_title = "Sentinel"
 
 urlpatterns = [
     path(settings.SENTINEL_ADMIN_PATH, admin.site.urls),
+    path("auth/", include("accounts.urls")),
+    path("server/", include("pipeline.urls")),
     path("", include("scanner.urls")),
 ]

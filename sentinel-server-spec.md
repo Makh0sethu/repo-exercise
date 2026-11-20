@@ -77,7 +77,10 @@ Each tool runs in its own pinned container (recorded by digest, not tag). The pi
 - Clone URLs are restricted to https on allowed hosts (default `github.com`); refs cannot inject git options; a failing or unreachable tool fails the step, never reports "clean".
 - **Private repos:** `SENTINEL_GITHUB_TOKEN` is passed to git through the environment only, and redacted from stored output. Planned replacement: a GitHub App with read-only access (see the auth notes below).
 
-## GitHub authentication (decision pending)
+- **Increment 3 done:** Sign in with GitHub (`web/accounts/`): operator / auditor / admin roles, fail-closed allowlist, immediate revocation, every login, denial and run attributed to a named person. `/server/` page to start and watch runs. Setup is in `web/README.md`.
+
+## GitHub authentication
+Sign-in is built (above). Reading *private repos* is still the token route; the GitHub App described below is the planned replacement.
 Public repos need none. For private repos the options, safest first: **GitHub App** installed on only the chosen repos, Contents read-only, short-lived installation tokens minted per run; **per-repo read-only deploy key**; **fine-grained token** scoped to chosen repos. Avoid a classic personal token. "Sign in with GitHub" (OAuth) is for *who may use the server*, which is a separate question from how the server reads repos.
 
 ## Open questions

@@ -96,6 +96,39 @@ Open http://localhost:8787 and enter the setup token.
 
 **Expected findings until spec step 8 is done:** there's no rate limit on scans and no lockout on the admin login (add `django-axes`). Anything else it proves is a real bug.
 
+## Sign in with GitHub (security server)
+Staff sign in with their GitHub account; the audit trail then names real people (`github:alice`) instead of "system".
+
+**1. Register an OAuth App** at GitHub → Settings → Developer settings → OAuth Apps → New:
+- Homepage URL: `http://127.0.0.1:8000`
+- Authorization callback URL: `http://127.0.0.1:8000/auth/github/callback/` (use your real https address on the server)
+- Copy the Client ID, and generate a Client secret.
+
+**2. Set these (PowerShell shown) before `runserver`:**
+```powershell
+$env:SENTINEL_GITHUB_CLIENT_ID="..."
+$env:SENTINEL_GITHUB_CLIENT_SECRET="..."
+$env:SENTINEL_BASE_URL="http://127.0.0.1:8000"
+$env:SENTINEL_GITHUB_USERS="yourgithubname:admin,teammate:operator,reviewer:auditor"
+```
+**3.** Open http://127.0.0.1:8000/server/ and sign in. To run the admin area, sign in through `/server/` first; the same session opens `/admin/`.
+
+| Role | Can do |
+|---|---|
+| `admin` | Everything: manage targets, delete scan logs |
+| `operator` | See targets and runs, **start runs** |
+| `auditor` | Read runs, findings, the audit trail and scan logs, export and verify. **Cannot start runs** |
+
+How it stays safe:
+- **Nobody by default.** With `SENTINEL_GITHUB_USERS` empty, nobody can sign in. People not listed are refused and the attempt is recorded.
+- **Identity is the GitHub numeric id**, not the name, so someone who later takes a released username doesn't inherit the old account.
+- **Removal is immediate.** Take someone out of the list (or change their role) and it applies on their very next request, not their next login. Removal is recorded as `auth.revoked`.
+- The login `state` is single-use and checked; the callback address comes from settings, never the Host header; `next` can't redirect off-site.
+- The GitHub token is used once to ask "who is this?" and then discarded. It is never stored or logged. Only `read:user` is requested, so it can't read your repos.
+- Starting a run is attributed to the person, and refused attempts are recorded as `auth.denied`.
+
+**Runs page:** `/server/` lists runs with who started them, the exact commit, each step's reason and exact command. Runs happen in a background thread for now (a proper job queue comes with the Docker tools), so refresh to see one finish.
+
 ## Assets
 - `static/scanner/logos/*.png`: 128 px PNGs made from [Devicon](https://devicon.dev) (MIT, see `DEVICON-LICENSE.txt`). The logos are trademarks of their projects. Packages without their own logo get their ecosystem's logo (Python or Node.js). Add a logo by dropping a PNG in and mapping it in `scanner/logos.py`.
 - `static/scanner/vendor/material-web.js`: `@material/web` 2.2.0 bundled with esbuild, so the server needs no CDN.

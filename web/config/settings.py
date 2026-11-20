@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "accounts",
     "audit",
     "pipeline",
     "scanner",
@@ -35,6 +36,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.middleware.GitHubAllowlistMiddleware",   # revokes access the moment someone is removed
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -84,6 +86,13 @@ if SENTINEL_HTTPS:
 SENTINEL_LOG_RETENTION_DAYS = int(os.environ.get("SENTINEL_LOG_RETENTION_DAYS", "30"))
 # Only these git hosts may be cloned. Add your own GitHub Enterprise host if you use one.
 PIPELINE_ALLOWED_GIT_HOSTS = [h for h in os.environ.get("SENTINEL_ALLOWED_GIT_HOSTS", "github.com").split(",") if h]
+# Sign in with GitHub. Create an OAuth App (GitHub -> Settings -> Developer settings) whose
+# callback URL is SENTINEL_BASE_URL + /auth/github/callback/
+SENTINEL_BASE_URL = os.environ.get("SENTINEL_BASE_URL", "http://127.0.0.1:8000")
+SENTINEL_GITHUB_CLIENT_ID = os.environ.get("SENTINEL_GITHUB_CLIENT_ID", "")
+SENTINEL_GITHUB_CLIENT_SECRET = os.environ.get("SENTINEL_GITHUB_CLIENT_SECRET", "")
+# Who may sign in, and as what: "alice:admin,bob:operator,carol:auditor". Empty = nobody.
+SENTINEL_GITHUB_USERS = os.environ.get("SENTINEL_GITHUB_USERS", "")
 AUDIT_EVIDENCE_DIR = Path(os.environ.get("SENTINEL_EVIDENCE_DIR", BASE_DIR / "evidence"))
 LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)

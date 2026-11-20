@@ -10,6 +10,8 @@ import uuid
 
 from django.conf import settings
 
+from accounts.identity import actor_name
+
 log = logging.getLogger("sentinel.access")
 
 
@@ -38,7 +40,7 @@ class RequestTraceMiddleware:
             "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "request_id": request.request_id,
             "ip": request.client_ip,
-            "user": user.get_username() if user is not None and user.is_authenticated else None,
+            "user": actor_name(user) if user is not None and user.is_authenticated else None,
             "method": request.method,
             "path": request.path,
             "query": request.META.get("QUERY_STRING", "")[:500],

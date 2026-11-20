@@ -1,0 +1,10 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: access denied{% endblock %}
+{% block content %}
+<div class="iz-card panel">
+  <h1 class="iz-title">Access <b>denied</b></h1>
+  <div class="alert alert--error" role="alert">{{ reason }}.</div>
+  <p class="muted">This attempt was recorded. If you should have access, ask an admin to add your GitHub username.</p>
+  <p><md-filled-button href="/">Back</md-filled-button></p>
+</div>
+{% endblock %}
