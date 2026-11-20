@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "audit",
+    "pipeline",
     "scanner",
 ]
 
@@ -81,6 +82,8 @@ SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = SENTINEL_HTTPS
 if SENTINEL_HTTPS:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if SENTINEL_TRUST_X_FORWARDED_FOR else None
 SENTINEL_LOG_RETENTION_DAYS = int(os.environ.get("SENTINEL_LOG_RETENTION_DAYS", "30"))
+# Only these git hosts may be cloned. Add your own GitHub Enterprise host if you use one.
+PIPELINE_ALLOWED_GIT_HOSTS = [h for h in os.environ.get("SENTINEL_ALLOWED_GIT_HOSTS", "github.com").split(",") if h]
 AUDIT_EVIDENCE_DIR = Path(os.environ.get("SENTINEL_EVIDENCE_DIR", BASE_DIR / "evidence"))
 LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)

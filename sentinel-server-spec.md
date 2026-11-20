@@ -71,6 +71,15 @@ Each tool runs in its own pinned container (recorded by digest, not tag). The pi
 7. **AI advisor** — read-only, logged prompt/reply, cannot run tools or alter findings.
 8. **Reports & exports**, then run the server through its own pipeline.
 
+## Progress
+- **Increment 1 done:** hash-chained audit core (`web/audit/`).
+- **Increment 2 done:** git-repo targets and a runner (`web/pipeline/`). Steps so far: `git_clone` (pins the exact commit) and `dependency_scan` (OSV.dev). Run one with `python manage.py run_pipeline <name> --add <github-url> [--ref branch]`. First target: `Makh0sethu/repo-exercise`.
+- Clone URLs are restricted to https on allowed hosts (default `github.com`); refs cannot inject git options; a failing or unreachable tool fails the step, never reports "clean".
+- **Private repos:** `SENTINEL_GITHUB_TOKEN` is passed to git through the environment only, and redacted from stored output. Planned replacement: a GitHub App with read-only access (see the auth notes below).
+
+## GitHub authentication (decision pending)
+Public repos need none. For private repos the options, safest first: **GitHub App** installed on only the chosen repos, Contents read-only, short-lived installation tokens minted per run; **per-repo read-only deploy key**; **fine-grained token** scoped to chosen repos. Avoid a classic personal token. "Sign in with GitHub" (OAuth) is for *who may use the server*, which is a separate question from how the server reads repos.
+
 ## Open questions
 - Where evidence artifacts live: local disk first; object store (S3-compatible) later?
 - Which AI provider for the advisor, and does it run fully locally (Ollama) to keep evidence on-prem?
