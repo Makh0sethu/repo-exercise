@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Run Django tests
+        run: python manage.py test scanner
+      - name: Django deployment check
+        env:
+          DJANGO_DEBUG: "0"
+          DJANGO_SECRET_KEY: "ci-test-secret-key-not-used-in-production-0123456789"
+          DJANGO_ALLOWED_HOSTS: "sentinel.example.com"
+        run: python manage.py check --deploy

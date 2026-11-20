@@ -44,11 +44,29 @@ if (form) {
   let timer;
   const schedule = () => { clearTimeout(timer); timer = setTimeout(preview, 350); };
 
-  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, () => drop.classList.add("is-over")));
-  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, () => drop.classList.remove("is-over")));
-  input.addEventListener("change", () => {
+  function renderFileList() {
     const list = $("#file-list");
     list.replaceChildren(...[...input.files].map((f) => el("li", {}, `${f.name} · ${(f.size / 1024).toFixed(1)} KB`)));
+  }
+
+  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => {
+    e.preventDefault();
+    drop.classList.add("is-over");
+  }));
+  drop.addEventListener("dragleave", () => drop.classList.remove("is-over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("is-over");
+    if (e.dataTransfer?.files?.length) {
+      const dt = new DataTransfer();
+      [...e.dataTransfer.files].forEach((f) => dt.items.add(f));
+      input.files = dt.files;
+      renderFileList();
+      preview();
+    }
+  });
+  input.addEventListener("change", () => {
+    renderFileList();
     preview();
   });
   $("#pasted").addEventListener("input", schedule);
@@ -106,8 +124,10 @@ if (dataTag) {
 
   $("#dl-json")?.addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(JSON.parse(dataTag.textContent), null, 2)], { type: "application/json" });
-    const a = el("a", { href: URL.createObjectURL(blob), download: `sentinel-${new Date().toISOString().slice(0, 10)}.json` });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: `sentinel-${new Date().toISOString().slice(0, 10)}.json` });
     document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#dl-pdf")?.addEventListener("click", () => window.print());
   window.addEventListener("beforeprint", () => $$("details.pkg").forEach((d) => { d.dataset.wasOpen = d.open; d.open = true; }));

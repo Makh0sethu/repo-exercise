@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
-<script>try { if (localStorage.getItem("sentinel-theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch (e) {}</script>
+<script src="{% static 'scanner/theme-init.js' %}"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Sentinel{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
