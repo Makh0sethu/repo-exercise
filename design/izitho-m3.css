@@ -1,0 +1,106 @@
+/* izitho M3 — soft (neumorphic) theme layered on Material Web (M3) tokens.
+   Derived from the reference boards: light grey surfaces, raised cards with
+   dual soft shadows, bright accent palette, ring gauges, colour accent strips. */
+
+:root {
+  /* Surfaces */
+  --iz-bg:            #E8ECF1;
+  --iz-card:          #EEF1F5;
+  --iz-shadow-dark:   #C8CED8;
+  --iz-shadow-light:  #FFFFFF;
+  --iz-ink:           #1F2A44;   /* headings, numbers (navy) */
+  --iz-ink-2:         #5E677A;   /* body / secondary text, ≥4.5:1 on --iz-card */
+  --iz-line:          #D9DEE6;
+
+  /* Accent palette (from the boards) */
+  --iz-pink:   #E9467A;
+  --iz-orange: #F39A1E;
+  --iz-yellow: #E8B300;
+  --iz-teal:   #22A98C;
+  --iz-blue:   #2F8FD8;
+  --iz-purple: #8257E6;
+  --iz-red:    #D93636;
+
+  /* Vulnwatch meaning of each colour */
+  --iz-exploited: var(--iz-red);      /* CISA KEV: actively exploited */
+  --iz-critical:  var(--iz-pink);
+  --iz-high:      var(--iz-orange);
+  --iz-moderate:  var(--iz-yellow);
+  --iz-low:       var(--iz-teal);
+  --iz-clean:     var(--iz-teal);
+  --iz-unknown:   #8A93A6;
+  --iz-news:      var(--iz-purple);
+  --iz-link:      var(--iz-blue);
+
+  /* Shape, depth, spacing */
+  --iz-radius-card: 20px;
+  --iz-radius-chip: 12px;
+  --iz-raised:  8px 8px 16px var(--iz-shadow-dark), -8px -8px 16px var(--iz-shadow-light);
+  --iz-raised-sm: 4px 4px 8px var(--iz-shadow-dark), -4px -4px 8px var(--iz-shadow-light);
+  --iz-inset:   inset 4px 4px 8px var(--iz-shadow-dark), inset -4px -4px 8px var(--iz-shadow-light);
+  --iz-gap: 24px;
+
+  /* Map onto Material Web (M3) system tokens */
+  --md-ref-typeface-brand: "Roboto", system-ui, sans-serif;
+  --md-ref-typeface-plain: "Roboto", system-ui, sans-serif;
+  --md-sys-color-primary: var(--iz-blue);
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-secondary: var(--iz-purple);
+  --md-sys-color-error: var(--iz-red);
+  --md-sys-color-surface: var(--iz-card);
+  --md-sys-color-surface-container: var(--iz-card);
+  --md-sys-color-surface-container-highest: var(--iz-bg);
+  --md-sys-color-on-surface: var(--iz-ink);
+  --md-sys-color-on-surface-variant: var(--iz-ink-2);
+  --md-sys-color-outline: var(--iz-line);
+  --md-sys-shape-corner-medium: var(--iz-radius-chip);
+  --md-sys-shape-corner-large: var(--iz-radius-card);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --iz-bg: #1D2128; --iz-card: #21262E;
+    --iz-shadow-dark: #15181D; --iz-shadow-light: #2B313B;
+    --iz-ink: #E9EDF3; --iz-ink-2: #A3ACBC; --iz-line: #303743;
+  }
+}
+:root[data-theme="dark"] {
+  --iz-bg: #1D2128; --iz-card: #21262E;
+  --iz-shadow-dark: #15181D; --iz-shadow-light: #2B313B;
+  --iz-ink: #E9EDF3; --iz-ink-2: #A3ACBC; --iz-line: #303743;
+}
+
+body { background: var(--iz-bg); color: var(--iz-ink); font-family: var(--md-ref-typeface-plain); }
+
+/* Title style: light first word, bold second ("Vulnerability Dashboard") + three dots */
+.iz-title { font-weight: 300; color: var(--iz-ink); }
+.iz-title b { font-weight: 700; }
+.iz-dots { display: flex; gap: 6px; margin-top: 8px; }
+.iz-dots i { width: 6px; height: 6px; border-radius: 50%; }
+.iz-dots i:nth-child(1) { background: var(--iz-pink); }
+.iz-dots i:nth-child(2) { background: var(--iz-orange); }
+.iz-dots i:nth-child(3) { background: var(--iz-teal); }
+
+/* Raised card (boards 1 + 2) */
+.iz-card { background: var(--iz-card); border-radius: var(--iz-radius-card); box-shadow: var(--iz-raised); padding: 20px; }
+/* Colour accent strip at the bottom of a card (board 2): set --strip */
+.iz-card--strip { position: relative; overflow: hidden; padding-bottom: 28px; }
+.iz-card--strip::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: 14px; height: 6px; border-radius: 3px; background: var(--strip, var(--iz-unknown)); }
+
+/* Round icon chip and ring gauge (board 1) */
+.iz-chip { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: var(--iz-radius-chip); box-shadow: var(--iz-raised-sm); background: var(--iz-card); }
+.iz-ring { --pct: 75; --ring: var(--iz-teal); width: 96px; aspect-ratio: 1; border-radius: 50%;
+  background: conic-gradient(var(--ring) calc(var(--pct) * 1%), var(--iz-line) 0);
+  display: grid; place-items: center; box-shadow: var(--iz-raised); }
+.iz-ring > span { width: 74%; aspect-ratio: 1; border-radius: 50%; background: var(--iz-card); box-shadow: var(--iz-inset);
+  display: grid; place-items: center; font-weight: 700; color: var(--iz-ink); }
+
+/* Step card with coloured side tab (board 3), for "how it works" */
+.iz-step { background: var(--iz-card); border-radius: var(--iz-radius-card); box-shadow: var(--iz-raised); padding: 20px 20px 20px 44px; position: relative; }
+.iz-step::before { content: attr(data-step); position: absolute; left: 0; top: 24px; bottom: 24px; width: 28px;
+  background: var(--tab, var(--iz-blue)); color: #fff; border-radius: 0 10px 10px 0;
+  writing-mode: vertical-rl; transform: rotate(180deg); display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+
+/* Accessibility: soft UI is low-contrast by nature — keep visible focus and edges */
+:focus-visible { outline: 3px solid var(--iz-blue); outline-offset: 2px; }
+input, textarea { border: 1px solid var(--iz-line); box-shadow: var(--iz-inset); background: var(--iz-card); }

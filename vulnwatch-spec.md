@@ -27,7 +27,7 @@ A public web app for any developer. You upload or paste your dependency files, a
 | No / loose version | Check by package name only, labelled "version unknown" | User's decision. Nothing skipped |
 | Backend | Django | User's choice. The admin panel helps in v2 |
 | Database | PostgreSQL: cache of **public** vulnerability/news data only | Already in the user's stack |
-| UI | Material Web (Google M3 components), swapped for "izitho ui M3" later | izitho isn't available yet |
+| UI | **izitho M3**: Material Web (M3) components themed with the izitho soft/neumorphic tokens in `design/izitho-m3.css` | User's design system, defined from their reference boards |
 | Hosting | User's own server. Develop and test locally first, then push to the server | User's decision |
 | Package vulnerabilities | OSV.dev is the primary source for PyPI + npm | Exact package-name matching. Avoids Dependency-Check's CPE false positives |
 | Dependency-Check sources | NVD API 2.0 (with API key), CISA KEV, RetireJS | Taken from OWASP Dependency-Check's source list |
@@ -47,6 +47,19 @@ NEWS     cached feeds + Hacker News, 30 days, match names + CVE ids
 SHOW     exploited first, then critical → high → moderate → low → clean
 EXPORT   PDF / JSON
 ```
+
+## Design: izitho M3
+Tokens live in `design/izitho-m3.css` and set Material Web's `--md-sys-*` tokens, so M3 components pick up the look.
+- **Surfaces:** light grey background (`#E8ECF1`), raised cards with soft dual shadows, 20px corners. A dark theme is included.
+- **Palette:** pink, orange, yellow, teal, blue, purple. Each has a fixed meaning: exploited = red, critical = pink, high = orange, moderate = yellow, low/clean = teal, news = purple, links = blue.
+- **Titles:** light word + bold word ("Vulnerability **Dashboard**") with three coloured dots underneath.
+- **Dashboard pieces:**
+  - ring gauges for "% packages clean" and "% with fixes available"
+  - stat tiles with round icon chips
+  - package cards with a coloured bottom strip showing their worst severity
+  - bar chart of problems by severity
+- **Landing page:** four step cards with coloured side tabs (Upload → Check → Review → Export).
+- **Accessibility:** soft UI is low-contrast, so text keeps ≥4.5:1 contrast, inputs keep a visible edge, and keyboard focus rings are always shown.
 
 ## Requirements
 **Input**
@@ -95,6 +108,5 @@ EXPORT   PDF / JSON
 The draft in `vulnwatch/` (stdlib CLI) is reference code. Reuse its OSV lookup, feed parsing, CVSS bucketing and dashboard layout, and drop its `discover` command.
 
 ## Open questions
-- "izitho ui M3": where it lives and when it's ready to replace Material Web.
 - "CVE partnership": recorded here as pulling cve.org records. If it instead means applying to become a CVE Numbering Authority (CNA), that is a separate application to the CVE Program, not code.
 - Exact server OS / web server (nginx + gunicorn assumed) for the deploy step.
