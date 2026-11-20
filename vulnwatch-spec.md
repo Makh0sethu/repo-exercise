@@ -27,7 +27,7 @@ A public web app for any developer. You upload or paste your dependency files, a
 | No / loose version | Check by package name only, labelled "version unknown" | User's decision. Nothing skipped |
 | Backend | Django | User's choice. The admin panel helps in v2 |
 | Database | PostgreSQL: cache of **public** vulnerability/news data only | Already in the user's stack |
-| UI | **izitho M3**: Material Web (M3) components themed with the izitho soft/neumorphic tokens in `design/izitho-m3.css` | User's design system, defined from their reference boards |
+| UI | **izitho M3**: Material Web (M3) components themed with the izitho soft/neumorphic tokens in `web/scanner/static/scanner/izitho-m3.css` | User's design system, defined from their reference boards |
 | Hosting | User's own server. Develop and test locally first, then push to the server | User's decision |
 | Package vulnerabilities | OSV.dev is the primary source for PyPI + npm | Exact package-name matching. Avoids Dependency-Check's CPE false positives |
 | Dependency-Check sources | NVD API 2.0 (with API key), CISA KEV, RetireJS | Taken from OWASP Dependency-Check's source list |
@@ -49,7 +49,7 @@ EXPORT   PDF / JSON
 ```
 
 ## Design: izitho M3
-Tokens live in `design/izitho-m3.css` and set Material Web's `--md-sys-*` tokens, so M3 components pick up the look.
+Tokens live in `web/scanner/static/scanner/izitho-m3.css` and set Material Web's `--md-sys-*` tokens, so M3 components pick up the look.
 - **Surfaces:** light grey background (`#E8ECF1`), raised cards with soft dual shadows, 20px corners. A dark theme is included.
 - **Palette:** pink, orange, yellow, teal, blue, purple. Each has a fixed meaning: exploited = red, critical = pink, high = orange, moderate = yellow, low/clean = teal, news = purple, links = blue.
 - **Titles:** light word + bold word ("Vulnerability **Dashboard**") with three coloured dots underneath.
@@ -94,6 +94,10 @@ Tokens live in `design/izitho-m3.css` and set Material Web's `--md-sys-*` tokens
 - **False-positive news matches on generic names:** skip very short or common names, and require a word-boundary match.
 - **CPE matching for PostgreSQL/PostGIS:** fix the CPE names (`postgresql:postgresql`, `postgis:postgis`) and test them against known CVEs.
 - **Abuse of a public upload form:** rate limits, size limits, nothing stored, ZAP scan.
+
+## Progress
+- **Done:** step 1 (Django app and izitho M3 UI), step 2 (parsers and tests), step 3 (OSV.dev lookup and results page), and the dashboard and export parts of step 7. Code is in `web/`, see `web/README.md`.
+- **Package logos:** real PNG logos (Devicon, MIT) for known packages. Others fall back to the Python or Node.js logo, and a plain line icon is used for PostGIS and unknown software.
 
 ## Plan and sequencing
 1. Django project + Postgres + Material Web base layout + upload/paste form. Run locally.

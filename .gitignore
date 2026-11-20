@@ -1,2 +1,5 @@
 vulnwatch/dashboard.html
 __pycache__/
+web/staticfiles/
+.venv/
+*.sqlite3

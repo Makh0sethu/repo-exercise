@@ -1,0 +1,125 @@
+{% extends "scanner/base.html" %}
+{% block title %}Vulnwatch: results{% endblock %}
+{% block body_class %}results{% endblock %}
+{% block content %}
+<header class="hero hero--results">
+  <div>
+    <h1 class="iz-title display">Vulnerability <b>Dashboard</b></h1>
+    {% include "scanner/_title.html" %}
+    <p class="muted">{% for name, kind, count in r.inputs %}{{ name }} ({{ count }}){% if not forloop.last %} + {% endif %}{% endfor %} · scanned {{ r.generated }}</p>
+  </div>
+  <div class="toolbar no-print">
+    <md-outlined-button id="dl-pdf">Download PDF</md-outlined-button>
+    <md-outlined-button id="dl-json">Download JSON</md-outlined-button>
+    <md-filled-button href="{% url 'scanner:scan' %}">New scan</md-filled-button>
+  </div>
+</header>
+
+{% if r.sample %}<div class="note">Sample report: the advisories are real public ones used as examples, the clean packages are illustrative, and the news headlines are placeholders.</div>{% endif %}
+{% for s in r.sources %}{% if s.status == "unreachable" %}<div class="alert alert--error" role="alert"><b>{{ s.name }} could not be reached.</b> Results from it are missing. Try again in a minute.</div>{% endif %}{% endfor %}
+{% if r.unreadable %}<div class="alert alert--warn"><b>Some lines couldn't be read and were not checked:</b><ul>{% for src, line in r.unreadable %}<li><code>{{ line }}</code> ({{ src }})</li>{% endfor %}</ul></div>{% endif %}
+
+<section class="tiles" aria-label="Summary">
+  <div class="iz-card tile"><span class="iz-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--iz-blue)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span><b>{{ r.stats.packages }}</b><span>packages checked</span></div>
+  <div class="iz-card tile"><span class="iz-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--iz-pink)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></span><b>{{ r.stats.vulnerable }}</b><span>with known problems</span></div>
+  <div class="iz-card tile"><span class="iz-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--iz-red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-9z"/></svg></span><b>{{ r.stats.exploited }}</b><span>actively exploited (CISA KEV)</span></div>
+  <div class="iz-card tile"><span class="iz-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--iz-orange)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><b>{{ r.stats.critical_high }}</b><span>critical or high</span></div>
+  <div class="iz-card tile"><span class="iz-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--iz-purple)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h6M7 13h10"/></svg></span><b>{{ r.stats.news }}</b><span>related news stories</span></div>
+</section>
+
+<section class="pair">
+  <div class="iz-card panel">
+    <h2 class="iz-title">Project <b>Health</b></h2>
+    <div class="rings">
+      <figure><div class="iz-ring" style="--pct: {{ r.stats.clean_pct }}; --ring: var(--iz-teal)" role="img" aria-label="{{ r.stats.clean_pct }} percent of packages clean"><span>{{ r.stats.clean_pct }}%</span></div>
+        <figcaption><b>Clean packages</b><span class="muted small">{{ r.clean|length }} of {{ r.stats.packages }}</span></figcaption></figure>
+      <figure><div class="iz-ring" style="--pct: {{ r.stats.fixable_pct }}; --ring: var(--iz-blue)" role="img" aria-label="{{ r.stats.fixable_pct }} percent of problems have a fix"><span>{{ r.stats.fixable_pct }}%</span></div>
+        <figcaption><b>Fix available</b><span class="muted small">{{ r.stats.fixable }} of {{ r.stats.problems }} problems</span></figcaption></figure>
+    </div>
+  </div>
+  <div class="iz-card panel">
+    <h2 class="iz-title">Problems by <b>Severity</b></h2>
+    <div class="bars" role="img" aria-label="{% for b in r.bars %}{{ b.label }} {{ b.count }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+      {% for b in r.bars %}<div class="bar"><span>{{ b.count }}</span><i class="fill-{{ b.cls }}" style="height: {% if b.count %}{{ b.pct }}{% else %}2{% endif %}%"></i><small>{{ b.label }}</small></div>{% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="packages">
+  <div class="section-head">
+    <h2 class="iz-title">Your <b>Packages</b></h2>
+    <div class="filters no-print">
+      <md-outlined-text-field id="pkg-search" label="Filter packages" type="search"></md-outlined-text-field>
+      <md-chip-set aria-label="Show">
+        <md-filter-chip label="With problems ({{ r.vulnerable|length }})" data-filter="vuln" selected></md-filter-chip>
+        <md-filter-chip label="Clean ({{ r.clean|length }})" data-filter="clean" selected></md-filter-chip>
+      </md-chip-set>
+    </div>
+  </div>
+
+  {% for p in r.vulnerable %}
+  <details class="iz-card pkg strip-{{ p.worst_class }}" data-state="vuln" data-name="{{ p.name|lower }}"{% if forloop.first %} open{% endif %}>
+    <summary>
+      {% include "scanner/_logo.html" %}
+      <span class="pkg-name">{{ p.name }}</span>
+      {% if p.exact %}<code class="ver">{{ p.version }}</code>{% else %}<code class="ver">{{ p.spec|default:"any version" }}</code><span class="badge badge--unknown">version unknown</span>{% endif %}
+      <span class="eco">{% if p.ecosystem == "Other" %}Other{% else %}{{ p.ecosystem }}{% endif %}</span>
+      <span class="grow"></span>
+      {% if p.exploited %}<span class="badge badge--exploited">exploited</span>{% endif %}
+      {% if p.news %}<span class="badge badge--news">{{ p.news|length }} news</span>{% endif %}
+      <span class="badge badge--{{ p.worst_class }}">{{ p.vulns|length }} · {{ p.worst }}</span>
+      <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
+    <div class="problems">
+      {% for v in p.vulns %}
+      <article class="problem">
+        <div class="problem-head"><span class="badge badge--{{ v.severity|lower }}">{{ v.severity }}</span>{% if v.exploited %}<span class="badge badge--exploited">exploited in the wild</span>{% endif %}<a href="{{ v.url }}" rel="noopener" target="_blank">{{ v.cve }}</a>{% for a in v.aliases %}{% if a != v.cve %}<span class="alias">{{ a }}</span>{% endif %}{% endfor %}</div>
+        <p>{{ v.summary }}</p>
+        <p class="muted small">{% if v.fixed %}Fix: upgrade to <b class="ink">{{ v.fixed|last }}</b>{% else %}No fixed version listed{% endif %}{% if v.published %} · published {{ v.published }}{% endif %} · sources: {{ v.sources|join:", " }}</p>
+      </article>
+      {% endfor %}
+      {% for n in p.news %}<p class="small"><span class="badge badge--news">{{ n.source }}</span> <a href="{{ n.url }}" rel="noopener" target="_blank">{{ n.title }}</a></p>{% endfor %}
+    </div>
+  </details>
+  {% empty %}
+  <div class="iz-card panel empty"><b>No known problems found.</b> <span class="muted">None of your packages match a published advisory in the connected sources.</span></div>
+  {% endfor %}
+
+  {% if r.clean %}
+  <h3 class="sub" data-state="clean">Clean · {{ r.clean|length }}</h3>
+  <div class="clean-grid">
+    {% for p in r.clean %}
+    <div class="iz-card mini strip-clean" data-state="clean" data-name="{{ p.name|lower }}">
+      {% include "scanner/_logo.html" %}
+      <div class="mini-text"><b>{{ p.name }}</b><code>{% if p.exact %}{{ p.version }}{% else %}{{ p.spec|default:"any version" }}{% endif %} · {% if p.ecosystem == "Other" %}Other{% else %}{{ p.ecosystem }}{% endif %}</code></div>
+      <span class="badge badge--clean">{% if p.exact %}✓ clean{% else %}✓ name only{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <p class="muted small" id="no-match" hidden>No packages match this filter.</p>
+</section>
+
+<section>
+  <h2 class="iz-title">Recent <b>Stories</b> <span class="muted small">· last 30 days</span></h2>
+  {% if r.news %}
+  <div class="news-grid">
+    {% for n in r.news %}
+    <article class="iz-card story">
+      <div><span class="badge badge--news">{{ n.source }}</span> <span class="muted small">{{ n.date }}</span></div>
+      <a href="{{ n.url }}" rel="noopener" target="_blank">{{ n.title }}</a>
+      <div>{% for m in n.matches %}<span class="alias">{{ m }}</span>{% endfor %}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">No recent stories matched your packages.</p>
+  {% endif %}
+</section>
+
+<footer class="sources" aria-label="Source status">
+  <span>Sources:</span>
+  {% for s in r.sources %}<span class="src src--{{ s.status|slugify }}" title="{{ s.status }}"><i aria-hidden="true"></i>{{ s.name }} <span class="sr-only">({{ s.status }})</span></span>{% endfor %}
+</footer>
+{{ r|json_script:"scan-data" }}
+{% endblock %}

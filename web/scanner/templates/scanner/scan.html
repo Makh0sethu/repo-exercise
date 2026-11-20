@@ -1,0 +1,75 @@
+{% extends "scanner/base.html" %}
+{% block title %}Vulnwatch: scan your dependencies{% endblock %}
+{% block content %}
+<header class="hero">
+  <div>
+    <h1 class="iz-title display">Vuln<b>watch</b></h1>
+    {% include "scanner/_title.html" %}
+    <p class="lead">Check your project's dependencies for known vulnerabilities and recent security news. Nothing you upload is stored.</p>
+  </div>
+  <a class="iz-chip hero-mark" href="{% url 'scanner:demo' %}" title="See a sample report">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--iz-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    <span class="sr-only">See a sample report</span>
+  </a>
+</header>
+
+<ol class="steps" aria-label="How it works">
+  <li class="iz-step" data-step="01" style="--tab: var(--iz-pink)"><small>STEP ONE</small><b>Upload</b><p>Drop in requirements.txt, package.json or package-lock.json.</p></li>
+  <li class="iz-step" data-step="02" style="--tab: var(--iz-blue)"><small>STEP TWO</small><b>Check</b><p>OSV.dev, NVD, CVE.org, CISA KEV and RetireJS are searched.</p></li>
+  <li class="iz-step" data-step="03" style="--tab: var(--iz-teal)"><small>STEP THREE</small><b>Review</b><p>See problems ranked by danger, with the version that fixes each.</p></li>
+  <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON. We keep nothing.</p></li>
+</ol>
+
+<form id="scan-form" class="iz-card panel" method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
+  {% csrf_token %}
+  <div>
+    <h2 class="iz-title">New <b>Scan</b></h2>
+    {% include "scanner/_title.html" %}
+  </div>
+
+  {% if error %}
+  <div class="alert alert--error" role="alert">
+    <b>{{ error }}</b>
+    {% if unreadable %}<ul>{% for src, line in unreadable %}<li><code>{{ line }}</code> ({{ src }})</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="cols">
+    <div class="col">
+      <label class="field-label" for="files">Dependency files</label>
+      <label class="drop" id="drop">
+        <span class="iz-chip drop-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--iz-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>
+        <span class="drop-main">Drag files here or <u>browse</u></span>
+        <span class="muted small">requirements.txt · package.json · package-lock.json · max 1 MB</span>
+        <input id="files" name="files" type="file" multiple accept=".txt,.json,text/plain,application/json">
+      </label>
+      <ul class="file-list" id="file-list" aria-live="polite"></ul>
+
+      <label class="field-label" for="pasted">…or paste file contents</label>
+      <textarea id="pasted" name="pasted" rows="5" spellcheck="false" placeholder="django==4.2.1&#10;requests&#10;psycopg2-binary>=2.9"></textarea>
+    </div>
+
+    <div class="col col--narrow">
+      <label class="field-label" for="other">Other software</label>
+      <p class="muted small">Databases and tools that aren't in your files. One per line: name and version.</p>
+      <textarea id="other" name="other" rows="5" spellcheck="false" placeholder="postgresql 15.4&#10;postgis 3.3.2"></textarea>
+      <div class="tip">
+        <span class="tip-icon" aria-hidden="true">!</span>
+        <p>For exact results, upload <b>package-lock.json</b> or the output of <b>pip freeze</b>. Packages without a version are checked by name only.</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="detected" id="detected" hidden aria-live="polite">
+    <div class="detected-head"><span class="field-label">Detected packages</span><span class="muted small" id="detected-count"></span></div>
+    <ul class="pkg-chips" id="detected-list"></ul>
+    <div class="alert alert--warn" id="detected-bad" hidden></div>
+  </section>
+
+  <div class="actions">
+    <p class="muted small" id="ready">Add a file, paste a list or fill in Other software to begin.</p>
+    <md-filled-button type="submit" id="scan-btn">Scan dependencies</md-filled-button>
+  </div>
+  <md-linear-progress indeterminate id="progress" hidden aria-label="Scanning"></md-linear-progress>
+</form>
+{% endblock %}
