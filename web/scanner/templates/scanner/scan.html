@@ -5,7 +5,7 @@
   <div>
     <h1 class="iz-title display"><b>Sentinel</b></h1>
     {% include "scanner/_title.html" %}
-    <p class="lead">Check your project's dependencies for known vulnerabilities and recent security news. Nothing you upload is stored.</p>
+    <p class="lead">Check your project's dependencies for known vulnerabilities and recent security news.</p>
   </div>
 </header>
 
@@ -13,7 +13,7 @@
   <li class="iz-step" data-step="01" style="--tab: var(--iz-pink)"><small>STEP ONE</small><b>Upload</b><p>Drop in requirements.txt, package.json or package-lock.json.</p></li>
   <li class="iz-step" data-step="02" style="--tab: var(--iz-blue)"><small>STEP TWO</small><b>Check</b><p>OSV.dev, NVD, CVE.org, CISA KEV and RetireJS are searched.</p></li>
   <li class="iz-step" data-step="03" style="--tab: var(--iz-teal)"><small>STEP THREE</small><b>Review</b><p>See problems ranked by danger, with the version that fixes each.</p></li>
-  <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON. We keep nothing.</p></li>
+  <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON to keep your own copy.</p></li>
 </ol>
 
 <form id="scan-form" class="iz-card panel" method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
@@ -62,6 +62,7 @@
     <div class="alert alert--warn" id="detected-bad" hidden></div>
   </section>
 
+  <p class="muted small privacy">By scanning you agree that the time, your IP address and the package names are logged for security and debugging, and deleted after {{ retention_days }} days. File contents are not saved.</p>
   <div class="actions">
     <p class="muted small" id="ready">Add a file, paste a list or fill in Other software to begin.</p>
     <md-filled-button type="submit" id="scan-btn">Scan dependencies</md-filled-button>

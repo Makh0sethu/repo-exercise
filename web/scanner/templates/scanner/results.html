@@ -6,7 +6,7 @@
   <div>
     <h1 class="iz-title display">Vulnerability <b>Dashboard</b></h1>
     {% include "scanner/_title.html" %}
-    <p class="muted">{% for name, kind, count in r.inputs %}{{ name }} ({{ count }}){% if not forloop.last %} + {% endif %}{% endfor %} · scanned {{ r.generated }}</p>
+    <p class="muted">{% if r.request_id %}<span title="Scan reference: quote it when reporting a problem">Ref {{ r.request_id|slice:":8" }}</span> · {% endif %}{% for name, kind, count in r.inputs %}{{ name }} ({{ count }}){% if not forloop.last %} + {% endif %}{% endfor %} · scanned {{ r.generated }}</p>
   </div>
   <div class="toolbar no-print">
     <md-outlined-button id="dl-pdf">Download PDF</md-outlined-button>

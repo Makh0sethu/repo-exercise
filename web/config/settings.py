@@ -17,14 +17,23 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "scanner",
 ]
 
 MIDDLEWARE = [
+    "scanner.middleware.RequestTraceMiddleware",   # first: times and logs every request
     "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -35,11 +44,54 @@ TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
     "DIRS": [],
     "APP_DIRS": True,
-    "OPTIONS": {"context_processors": ["django.template.context_processors.request"]},
+    "OPTIONS": {"context_processors": [
+        "django.template.context_processors.request",
+        "django.contrib.auth.context_processors.auth",
+        "django.contrib.messages.context_processors.messages",
+        "scanner.context_processors.sentinel",
+    ]},
 }]
 
-# PostgreSQL is used later as a cache of public vulnerability data (spec step 4+).
-DATABASES = {}
+# SQLite on your machine; PostgreSQL on the server when SENTINEL_DB_NAME is set
+# (also needs: pip install "psycopg[binary]").
+if os.environ.get("SENTINEL_DB_NAME"):
+    DATABASES = {"default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ["SENTINEL_DB_NAME"],
+        "USER": os.environ.get("SENTINEL_DB_USER", ""),
+        "PASSWORD": os.environ.get("SENTINEL_DB_PASSWORD", ""),
+        "HOST": os.environ.get("SENTINEL_DB_HOST", "localhost"),
+        "PORT": os.environ.get("SENTINEL_DB_PORT", "5432"),
+    }}
+else:
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ---- Usage tracing
+# Admin lives at a path you choose, so scanners don't find it at /admin/.
+SENTINEL_ADMIN_PATH = os.environ.get("SENTINEL_ADMIN_PATH", "admin/").strip("/") + "/"
+# Only trust X-Forwarded-For when Sentinel sits behind your own proxy (nginx).
+# Otherwise anyone can fake their IP with that header.
+SENTINEL_TRUST_X_FORWARDED_FOR = os.environ.get("SENTINEL_TRUST_X_FORWARDED_FOR", "0") == "1"
+SENTINEL_LOG_RETENTION_DAYS = int(os.environ.get("SENTINEL_LOG_RETENTION_DAYS", "30"))
+LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(message)s"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+        "access_file": {
+            "class": "logging.handlers.RotatingFileHandler", "formatter": "plain",
+            "filename": str(LOG_DIR / "access.jsonl"), "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5, "encoding": "utf-8",
+        },
+    },
+    "loggers": {
+        "sentinel.access": {"handlers": ["console", "access_file"], "level": "INFO", "propagate": False},
+    },
+}
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

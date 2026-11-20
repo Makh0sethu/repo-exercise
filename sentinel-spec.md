@@ -21,6 +21,7 @@ A public web app for any developer. You upload or paste your dependency files, a
 | Decision | Choice | Rationale |
 |---|---|---|
 | Audience | Public web app, any developer | User's goal |
+| Usage tracing | Log every request (access log) and every scan (time, real IP, browser, package list, outcome). Staff roles: superuser, and "Sentinel auditors" (read and export only). Deleted after 30 days. Visitors are told on the page | User's decision: needed for debugging and pen testing. Replaces the earlier "nothing is stored" promise: file contents are still never saved |
 | Mode | One-off scan, no accounts | Useful on day one. Tracking is added later without rework |
 | Stack covered | Python, npm, PostgreSQL, PostGIS | The user's own stack first |
 | Inputs | Upload or paste `requirements.txt`, `package.json`, `package-lock.json`; an "Other software" box for lines like `postgresql 15.4`, `postgis 3.3.2` | PostgreSQL/PostGIS aren't in dependency files |

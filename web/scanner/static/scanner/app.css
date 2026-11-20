@@ -85,6 +85,7 @@ textarea { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color:
 .pkg-chips .logo img { width: 18px; height: 18px; }
 .actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
 .actions p { margin: 0; }
+.privacy { margin: -8px 0 0; }
 md-filled-button { --md-filled-button-container-shape: 14px; --md-filled-button-container-height: 48px; --md-filled-button-label-text-size: 15px; }
 md-outlined-button { --md-outlined-button-container-shape: 14px; --md-outlined-button-container-height: 44px; }
 md-linear-progress { width: 100%; --md-linear-progress-track-shape: 4px; }

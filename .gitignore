@@ -3,3 +3,5 @@ __pycache__/
 web/staticfiles/
 .venv/
 *.sqlite3
+web/db.sqlite3
+web/logs/

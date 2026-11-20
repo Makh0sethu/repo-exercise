@@ -1,19 +1,49 @@
+import logging
+import time
+
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
 from .logos import logo_for
+from .models import ScanLog
 from .parsers import parse_inputs
 from .scan import run_scan
+
+
+log = logging.getLogger(__name__)
 
 
 class TooLarge(Exception):
     pass
 
 
+def _log_scan(request, started, status, outcome, parsed=None, result=None, error=""):
+    """Record who scanned what, and when. File contents are never stored."""
+    try:
+        ScanLog.objects.create(
+            request_id=getattr(request, "request_id", ""),
+            ip=getattr(request, "client_ip", None) or request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:300],
+            status_code=status,
+            outcome=outcome,
+            files=[{"name": n, "kind": k, "count": c} for n, k, c in parsed.files] if parsed else [],
+            package_count=len(parsed.packages) if parsed else 0,
+            packages=[f"{p.ecosystem}:{p.name}@{p.version or p.spec or '*'}" for p in parsed.packages] if parsed else [],
+            unreadable=[line for _, line in parsed.unreadable][:200] if parsed else [],
+            sources={s["name"]: s["status"] for s in result["sources"]} if result else {},
+            vulnerable_count=result["stats"]["vulnerable"] if result else 0,
+            problem_count=result["stats"]["problems"] if result else 0,
+            duration_ms=round((time.monotonic() - started) * 1000),
+            error=error[:2000],
+        )
+    except Exception:  # logging must never break a scan
+        log.exception("Could not write scan log")
+
+
 def _read_inputs(request):
-    """Read the form. Files stay in memory and are never saved."""
+    """Read the form. Files stay in memory; only the parsed package list is logged."""
     # Check the raw size first: Django silently drops files over the memory limit.
     if int(request.META.get("CONTENT_LENGTH") or 0) > settings.DATA_UPLOAD_MAX_MEMORY_SIZE:
         raise TooLarge()
@@ -50,16 +80,25 @@ def parse_preview(request):
 
 @require_POST
 def run_scan_view(request):
+    started = time.monotonic()
     try:
         parsed = _read_inputs(request)
     except TooLarge:
+        _log_scan(request, started, 413, "too_large")
         return render(request, "scanner/scan.html", {"error": "Files are larger than 1 MB."}, status=413)
     if not parsed.packages:
+        _log_scan(request, started, 400, "empty", parsed)
         return render(request, "scanner/scan.html", {
             "error": "No packages found. Upload a dependency file or paste its contents.",
             "unreadable": parsed.unreadable}, status=400)
-    result = run_scan(parsed.packages)
+    try:
+        result = run_scan(parsed.packages)
+    except Exception as exc:
+        _log_scan(request, started, 500, "error", parsed, error=repr(exc))
+        raise
     result["inputs"] = parsed.files
     result["unreadable"] = parsed.unreadable
+    result["request_id"] = getattr(request, "request_id", "")
+    _log_scan(request, started, 200, "ok", parsed, result)
     return render(request, "scanner/results.html", {"r": result})
 
