@@ -4,7 +4,7 @@ from unittest import mock
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import Group, User
 from django.core.management import call_command
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from datetime import timedelta
 
@@ -91,7 +91,7 @@ class ViewTests(TestCase):
 
     def test_scan_uses_osv_and_marks_unreachable(self):
         with mock.patch("scanner.scan._get_json", side_effect=OSError("offline")):
-            r = self.client.post("/scan/", {"pasted": "django==4.2.1"})
+            r = self.client.post("/scan/", {"pasted": "django==4.2.1"}, follow=True)
         self.assertContains(r, "OSV.dev could not be reached")
         self.assertContains(r, "Not checked · 1")
         self.assertNotContains(r, "✓ clean")
@@ -100,7 +100,7 @@ class ViewTests(TestCase):
         def fake(url, body=None, timeout=20):
             return {"results": [{} for _ in body["queries"]]}
         with mock.patch("scanner.scan._get_json", side_effect=fake):
-            r = self.client.post("/scan/", {"pasted": "numpy==2.1.3", "other": "postgresql 15.4"})
+            r = self.client.post("/scan/", {"pasted": "numpy==2.1.3", "other": "postgresql 15.4"}, follow=True)
         self.assertContains(r, "Needs NVD, not connected yet")
         self.assertContains(r, "1 of 1 checked")
 
@@ -113,7 +113,7 @@ class ViewTests(TestCase):
                     "affected": [{"package": {"ecosystem": "PyPI", "name": "django"},
                                   "ranges": [{"events": [{"introduced": "0"}, {"fixed": "4.2.3"}]}]}]}
         with mock.patch("scanner.scan._get_json", side_effect=fake):
-            r = self.client.post("/scan/", {"pasted": "django==4.2.1"})
+            r = self.client.post("/scan/", {"pasted": "django==4.2.1"}, follow=True)
         self.assertContains(r, "CVE-2023-36053")
         self.assertContains(r, "4.2.3")
         self.assertContains(r, "scanner/logos/django.png")
@@ -123,7 +123,7 @@ class ViewTests(TestCase):
         def fake(url, body=None, timeout=20):
             return {"results": [{} for _ in body["queries"]]}
         with mock.patch("scanner.scan._get_json", side_effect=fake):
-            r = self.client.post("/scan/", {"pasted": "requests==2.32.0"})
+            r = self.client.post("/scan/", {"pasted": "requests==2.32.0"}, follow=True)
         self.assertContains(r, "scanner/logos/python.png")
 
 
@@ -146,7 +146,8 @@ class TracingTests(TestCase):
         self.assertEqual(sorted(row.packages), ["PyPI:django@4.2.1", "PyPI:requests@*"])
         self.assertEqual(row.sources["OSV.dev"], "ok")
         self.assertEqual(row.request_id, r["X-Request-ID"])
-        self.assertContains(r, "Ref " + row.request_id[:8])
+        self.assertEqual(r.status_code, 302)
+        self.assertContains(self.client.get(r["Location"]), "Ref " + row.request_id[:8])
 
     def test_failed_scans_are_logged_too(self):
         self.client.post("/scan/", {"pasted": ""})
@@ -218,3 +219,90 @@ class PermissionTests(TestCase):
         row = ScanLog.objects.get()
         self.client.post(f"{self.url}{row.pk}/delete/", {"post": "yes"})
         self.assertFalse(ScanLog.objects.exists())
+
+
+class NavigationAndSessionTests(TestCase):
+    def scan(self, client=None, pasted="django==4.2.1"):
+        client = client or self.client
+        with mock.patch("scanner.scan._get_json", side_effect=_no_vulns):
+            return client.post("/scan/", {"pasted": pasted})
+
+    def test_scan_redirects_to_its_own_result_address(self):
+        r = self.scan()
+        self.assertEqual(r.status_code, 302)
+        self.assertRegex(r["Location"], r"^/results/[\w-]+/$")
+        page = self.client.get(r["Location"])
+        self.assertContains(page, "Vulnerability")
+        self.assertEqual(self.client.get(r["Location"]).status_code, 200)       # Refresh and Back are safe
+
+    def test_refreshing_a_result_does_not_run_or_log_the_scan_again(self):
+        loc = self.scan()["Location"]
+        for _ in range(3):
+            self.client.get(loc)
+        self.assertEqual(ScanLog.objects.count(), 1)
+
+    def test_results_belong_to_the_session_that_made_them(self):
+        loc = self.scan()["Location"]
+        self.assertEqual(Client().get(loc).status_code, 404)                    # another visitor cannot open it
+        self.assertEqual(self.client.get("/results/not-a-real-id/").status_code, 404)
+
+    def test_results_list_shows_recent_scans_newest_first_and_keeps_five(self):
+        locs = [self.scan(pasted=f"pkg{i}==1.0")["Location"] for i in range(7)]
+        page = self.client.get("/results/")
+        self.assertEqual(page.content.decode().count('class="iz-card result-row"'), 5)
+        self.assertContains(page, locs[-1]); self.assertNotContains(page, locs[0])
+        self.assertEqual(self.client.get(locs[0]).status_code, 404)             # oldest dropped
+
+    def test_empty_results_list_explains_itself(self):
+        self.assertContains(self.client.get("/results/"), "No results in this session yet")
+
+    def test_failed_scan_keeps_what_the_person_typed(self):
+        r = self.client.post("/scan/", {"pasted": "-r other.txt\n# nothing usable", "other": "not a valid line"})
+        self.assertEqual(r.status_code, 400)
+        self.assertContains(r, "-r other.txt", status_code=400)
+        self.assertContains(r, "not a valid line", status_code=400)
+
+    def test_session_ends_when_the_browser_closes(self):
+        from django.conf import settings
+        self.assertTrue(settings.SESSION_EXPIRE_AT_BROWSER_CLOSE)
+        self.assertLessEqual(settings.SESSION_COOKIE_AGE, 8 * 3600)
+
+    def test_dynamic_pages_are_never_cached_but_static_files_are_left_alone(self):
+        self.assertEqual(self.client.get("/")["Cache-Control"], "no-store, max-age=0")
+        self.assertEqual(self.client.get(self.scan()["Location"])["Cache-Control"], "no-store, max-age=0")
+        self.assertEqual(self.client.post("/parse/", {"pasted": "a==1"})["Cache-Control"], "no-store, max-age=0")
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+        from .middleware import NoStoreMiddleware
+        css = NoStoreMiddleware(lambda r: HttpResponse("a{}", content_type="text/css"))(RequestFactory().get("/x.css"))
+        self.assertNotIn("Cache-Control", css)                                   # static assets keep normal caching
+
+    def test_nav_for_an_anonymous_visitor(self):
+        page = self.client.get("/").content.decode()
+        self.assertIn('aria-label="Main"', page)
+        self.assertIn(">Scan", page); self.assertIn(">Results", page)
+        self.assertIn("Sign in with GitHub", page)
+        self.assertNotIn("Security runs", page); self.assertNotIn(">Admin", page)
+
+    def test_current_page_is_marked_in_the_nav(self):
+        self.assertRegex(self.client.get("/").content.decode(), r'class="nav-link is-active" aria-current="page">Scan')
+        self.assertRegex(self.client.get("/results/").content.decode(), r'class="nav-link is-active" aria-current="page">Results')
+
+    def test_nav_counts_saved_results(self):
+        self.scan(); self.scan(pasted="flask==3.0.0")
+        self.assertContains(self.client.get("/"), 'aria-label="2 saved"')
+
+    def test_missing_page_has_the_nav_and_a_way_back(self):
+        r = self.client.get("/results/nope/")
+        self.assertContains(r, 'aria-label="Main"', status_code=404)
+        self.assertContains(r, "data-back", status_code=404)
+
+    def test_result_page_has_breadcrumb_and_back_to_input(self):
+        page = self.client.get(self.scan()["Location"])
+        self.assertContains(page, 'aria-label="Breadcrumb"')
+        self.assertContains(page, "← Edit input")
+        self.assertContains(page, "/?new=1")                                     # "New scan" starts clean
+
+    def test_new_scan_link_and_state_hooks_exist_on_the_form(self):
+        page = self.client.get("/")
+        self.assertContains(page, "data-keep-state"); self.assertContains(page, 'id="clear-form"')

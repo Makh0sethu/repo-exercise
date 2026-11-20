@@ -152,6 +152,27 @@ set SENTINEL_TOOL_DIRS=C:\path\to\tools      # optional: extra folders to look f
 - Scanners get a minimal environment: no credentials. Only the two that call advisory services also get proxy/CA settings, and only the *names* of those variables are recorded.
 - Clone depth defaults to 1, so Gitleaks only sees the latest commit. Set `"depth": N` on the `git_clone` step to scan more history.
 
+## Navigation and session state
+A top navigation bar on every page: **Scan · Results · Security runs · Admin**, with who you are, Sign out (or Sign in with GitHub) and the light/dark switch. The current page is highlighted, "Security runs" and "Admin" only appear if your role allows them, and on a phone the links wrap onto their own row.
+
+**Flows**
+- A scan redirects to its own address, `/results/<id>/`. Refresh, Back and Forward are safe: nothing is resubmitted, and a refresh never re-runs or re-logs the scan.
+- Pages have a breadcrumb and a back button. Back links use your real browser history when you came from this site, so you return to the same scroll position and view; otherwise they follow the link.
+- **Edit input** returns to the form with everything you entered; **New scan** starts clean.
+- If a scan fails (nothing readable, file too big), the form comes back with your input still in it.
+- Sign-in returns you to the page you wanted. Run pages show findings (worst first, filterable), each step's reason and exact command, and refresh themselves once when a running scan finishes.
+- Missing and forbidden pages are friendly pages with the nav and a way back.
+
+**What is remembered, and for how long** (this browser session only)
+| What | Where | Ends |
+|---|---|---|
+| Your last 5 scan results | Server-side, in *your* session only; nobody else can open them | Closing the browser, 8 hours, or Sign out |
+| Form input (text and uploaded file contents) | Your browser tab (`sessionStorage`) | Closing the tab, or "Clear and start fresh" |
+| Result filters, which packages were open, run filters, chosen target | Your browser tab | Closing the tab |
+| Light/dark choice | Your browser (`localStorage`) | You change it |
+
+**Caching:** every page (HTML and JSON) is sent `Cache-Control: no-store`, so the browser never reuses a saved copy. Pressing Back after signing out can't show a cached signed-in page, and run status is always current. Static files (CSS, JS, logos) keep normal caching. State is restored by the page itself from the stores above, not from the cache.
+
 ## Assets
 - `static/scanner/logos/*.png`: 128 px PNGs made from [Devicon](https://devicon.dev) (MIT, see `DEVICON-LICENSE.txt`). The logos are trademarks of their projects. Packages without their own logo get their ecosystem's logo (Python or Node.js). Add a logo by dropping a PNG in and mapping it in `scanner/logos.py`.
 - `static/scanner/vendor/material-web.js`: `@material/web` 2.2.0 bundled with esbuild, so the server needs no CDN.

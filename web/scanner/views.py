@@ -3,9 +3,12 @@ import time
 
 from django.conf import settings
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.http import Http404
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from . import history
 from .logos import logo_for
 from .models import ScanLog
 from .parsers import parse_inputs
@@ -57,9 +60,14 @@ def _read_inputs(request):
     return parse_inputs(uploads, pasted, other)
 
 
+def _form_values(request):
+    """What the person typed, so an error never throws their input away."""
+    return {"pasted": request.POST.get("pasted", ""), "other": request.POST.get("other", "")}
+
+
 @require_GET
 def scan_page(request):
-    return render(request, "scanner/scan.html")
+    return render(request, "scanner/scan.html", {"form": {"pasted": "", "other": ""}})
 
 
 @require_POST
@@ -85,12 +93,12 @@ def run_scan_view(request):
         parsed = _read_inputs(request)
     except TooLarge:
         _log_scan(request, started, 413, "too_large")
-        return render(request, "scanner/scan.html", {"error": "Files are larger than 1 MB."}, status=413)
+        return render(request, "scanner/scan.html", {"error": "Files are larger than 1 MB.", "form": _form_values(request)}, status=413)
     if not parsed.packages:
         _log_scan(request, started, 400, "empty", parsed)
         return render(request, "scanner/scan.html", {
             "error": "No packages found. Upload a dependency file or paste its contents.",
-            "unreadable": parsed.unreadable}, status=400)
+            "unreadable": parsed.unreadable, "form": _form_values(request)}, status=400)
     try:
         result = run_scan(parsed.packages)
     except Exception as exc:
@@ -100,5 +108,20 @@ def run_scan_view(request):
     result["unreadable"] = parsed.unreadable
     result["request_id"] = getattr(request, "request_id", "")
     _log_scan(request, started, 200, "ok", parsed, result)
-    return render(request, "scanner/results.html", {"r": result})
+    # Post/Redirect/Get: the result has its own address, so Back, Refresh and bookmarks all work
+    # and refreshing never re-runs (or re-logs) the scan.
+    return redirect(reverse("scanner:result", args=[history.save(request, result)]))
+
+
+@require_GET
+def result_page(request, rid):
+    result = history.load(request, rid)
+    if result is None:
+        raise Http404("That result is no longer available. Results are kept only for this browser session.")
+    return render(request, "scanner/results.html", {"r": result, "rid": rid})
+
+
+@require_GET
+def results_list(request):
+    return render(request, "scanner/results_list.html", {"items": history.recent(request)})
 

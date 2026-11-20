@@ -16,11 +16,16 @@
   <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON to keep your own copy.</p></li>
 </ol>
 
-<form id="scan-form" class="iz-card panel" method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
+<form id="scan-form" class="iz-card panel" data-keep-state method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
   {% csrf_token %}
   <div>
     <h2 class="iz-title">New <b>Scan</b></h2>
     {% include "scanner/_title.html" %}
+  </div>
+
+  <div class="note restored no-print" id="restored" hidden role="status">
+    <span>Restored what you had entered earlier in this session.</span>
+    <button type="button" class="linklike" id="clear-form">Clear and start fresh</button>
   </div>
 
   {% if error %}
@@ -42,13 +47,13 @@
       <ul class="file-list" id="file-list" aria-live="polite"></ul>
 
       <label class="field-label" for="pasted">…or paste file contents</label>
-      <textarea id="pasted" name="pasted" rows="5" spellcheck="false" placeholder="django==4.2.1&#10;requests&#10;psycopg2-binary>=2.9"></textarea>
+      <textarea id="pasted" name="pasted" rows="5" spellcheck="false" placeholder="django==4.2.1&#10;requests&#10;psycopg2-binary>=2.9">{{ form.pasted }}</textarea>
     </div>
 
     <div class="col col--narrow">
       <label class="field-label" for="other">Other software</label>
       <p class="muted small">Databases and tools that aren't in your files. One per line: name and version.</p>
-      <textarea id="other" name="other" rows="5" spellcheck="false" placeholder="postgresql 15.4&#10;postgis 3.3.2"></textarea>
+      <textarea id="other" name="other" rows="5" spellcheck="false" placeholder="postgresql 15.4&#10;postgis 3.3.2">{{ form.other }}</textarea>
       <div class="tip">
         <span class="tip-icon" aria-hidden="true">!</span>
         <p>For exact results, upload <b>package-lock.json</b> or the output of <b>pip freeze</b>. Packages without a version are checked by name only.</p>

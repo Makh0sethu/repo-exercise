@@ -1,7 +1,9 @@
 {% extends "scanner/base.html" %}
 {% block title %}Sentinel: results{% endblock %}
 {% block body_class %}results{% endblock %}
+{% block crumbs %}<nav class="crumbs no-print" aria-label="Breadcrumb"><a href="{% url 'scanner:scan' %}">Scan</a><span aria-hidden="true">›</span><a href="{% url 'scanner:results' %}">Results</a><span aria-hidden="true">›</span><span aria-current="page">This scan</span><a class="back" href="{% url 'scanner:scan' %}">← Edit input</a></nav>{% endblock %}
 {% block content %}
+<div id="page-state" data-key="results:{{ rid }}" hidden></div>
 <header class="hero hero--results">
   <div>
     <h1 class="iz-title display">Vulnerability <b>Dashboard</b></h1>
@@ -11,7 +13,8 @@
   <div class="toolbar no-print">
     <md-outlined-button id="dl-pdf">Download PDF</md-outlined-button>
     <md-outlined-button id="dl-json">Download JSON</md-outlined-button>
-    <md-filled-button href="{% url 'scanner:scan' %}">New scan</md-filled-button>
+    <md-outlined-button href="{% url 'scanner:scan' %}">Edit input</md-outlined-button>
+    <md-filled-button href="{% url 'scanner:scan' %}?new=1">New scan</md-filled-button>
   </div>
 </header>
 

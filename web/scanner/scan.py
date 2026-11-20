@@ -131,6 +131,21 @@ def unchecked_reason(ecosystem, sources):
     return None if sources.get("NVD") == "ok" else "needs NVD, not connected yet"
 
 
+def split_groups(rows):
+    """(vulnerable, clean, not-checked) package rows. Derived, so it is never stored."""
+    vulnerable = [r for r in rows if r["vulns"]]
+    clean = [r for r in rows if r["checked"] and not r["vulns"]]
+    unchecked = [r for r in rows if not r["checked"]]
+    return vulnerable, clean, unchecked
+
+
+def hydrate(result):
+    """Rebuild the derived lists on a result loaded back from the session."""
+    result = dict(result)
+    result["vulnerable"], result["clean"], result["unchecked"] = split_groups(result["packages"])
+    return result
+
+
 def build_result(packages, vulns, sources, news):
     """Shape everything the dashboard and the JSON download need."""
     rows = []
@@ -159,17 +174,13 @@ def build_result(packages, vulns, sources, news):
     all_v = [v for r in rows for v in r["vulns"]]
     counts = {s: sum(v["severity"] == s for v in all_v) for s in SEVERITIES}
     peak = max(counts.values(), default=0) or 1
-    vulnerable = [r for r in rows if r["vulns"]]
-    clean = [r for r in rows if r["checked"] and not r["vulns"]]
-    unchecked = [r for r in rows if not r["checked"]]
+    vulnerable, clean, unchecked = split_groups(rows)
     checked = len(rows) - len(unchecked)
     fixable = sum(bool(v["fixed"]) for v in all_v)
     return {
         "generated": datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
         "packages": rows,
-        "vulnerable": vulnerable,
-        "clean": clean,
-        "unchecked": unchecked,
+        "vulnerable": vulnerable, "clean": clean, "unchecked": unchecked,
         "news": news,
         "sources": [{"name": k, "status": v} for k, v in sources.items()],
         "stats": {

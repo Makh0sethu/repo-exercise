@@ -1,0 +1,10 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: not allowed{% endblock %}
+{% block content %}
+<div class="iz-card panel">
+  <h1 class="iz-title">Not <b>allowed</b></h1>
+  <div class="alert alert--error" role="alert">{{ message|default:"You don't have permission to do that." }}</div>
+  <p class="muted">This attempt was recorded.</p>
+  <p class="actions"><a class="back" href="/" data-back>← Go back</a></p>
+</div>
+{% endblock %}

@@ -81,6 +81,8 @@ Each tool runs in its own pinned container (recorded by digest, not tag). The pi
 
 - **Increment 4 done:** scanners that need no Docker: Gitleaks (secrets), Bandit (Python SAST), pip-audit and npm audit (dependencies), plus the OSV cross-check. Tested against a real private repo. **Still needs Docker (not built):** Trivy image scanning, Semgrep with registry rules, ZAP/Nuclei DAST, and deploying a target in a sandbox.
 
+- **Increment 5 done:** navigation and flows. Top nav bar, breadcrumbs and back buttons, scan → `/results/<id>/` redirect, session-only history of the last 5 results, form/filter state kept per tab, run detail page with findings, friendly 403/404 pages, `no-store` on all dynamic pages. 106 tests plus a 32-step real-browser walkthrough.
+
 ## GitHub authentication
 Sign-in is built (above). Reading *private repos* is still the token route; the GitHub App described below is the planned replacement.
 Public repos need none. For private repos the options, safest first: **GitHub App** installed on only the chosen repos, Contents read-only, short-lived installation tokens minted per run; **per-repo read-only deploy key**; **fine-grained token** scoped to chosen repos. Avoid a classic personal token. "Sign in with GitHub" (OAuth) is for *who may use the server*, which is a separate question from how the server reads repos.

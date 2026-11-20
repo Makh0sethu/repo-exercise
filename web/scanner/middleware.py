@@ -25,6 +25,21 @@ def client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
+class NoStoreMiddleware:
+    """Pages are per-visitor and change (results, run status, who is signed in), so browsers
+    must not reuse a saved copy, e.g. when pressing Back after signing out. Static files
+    are served by their own handler and keep normal caching."""
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        ctype = response.get("Content-Type", "")
+        if ("text/html" in ctype or "application/json" in ctype) and "Cache-Control" not in response:
+            response["Cache-Control"] = "no-store, max-age=0"
+        return response
+
+
 class RequestTraceMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

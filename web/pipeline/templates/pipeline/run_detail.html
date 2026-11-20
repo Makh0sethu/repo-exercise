@@ -1,0 +1,54 @@
+{% extends "scanner/base.html" %}
+{% load dict_extras %}
+{% block title %}Sentinel: run {{ run.pk }}{% endblock %}
+{% block crumbs %}<nav class="crumbs no-print" aria-label="Breadcrumb"><a href="{% url 'pipeline:runs' %}">Security runs</a><span aria-hidden="true">›</span><span aria-current="page">Run {{ run.pk }}</span><a class="back" href="{% url 'pipeline:runs' %}" data-back>← All runs</a></nav>{% endblock %}
+{% block content %}
+<div id="page-state" data-key="run:{{ run.pk }}" hidden {% if running %}data-status-url="{% url 'pipeline:run_status' run.pk %}"{% endif %}></div>
+<header class="hero hero--results">
+  <div>
+    <h1 class="iz-title display">Run <b>{{ run.pk }}</b> · {{ run.target.name }}</h1>
+    {% include "scanner/_title.html" %}
+    <p class="muted">Commit <code>{{ run.commit_sha|default:"not cloned yet" }}</code> · started by {{ run.requested_by|default:"system" }} · {{ run.created_at|date:"d M Y H:i" }} UTC</p>
+  </div>
+  <div class="toolbar">
+    <span class="badge badge--{% if run.status == 'passed' %}clean{% elif run.status == 'failed' or run.status == 'error' %}critical{% else %}unknown{% endif %}">{{ run.status }}{% if running %} · refreshing when done{% endif %}</span>
+  </div>
+</header>
+
+<section class="tiles" aria-label="Summary">
+  <div class="iz-card tile"><b>{{ steps|length }}</b><span>steps</span></div>
+  <div class="iz-card tile"><b>{{ findings|length }}</b><span>findings</span></div>
+  {% for sev, n in counts.items %}<div class="iz-card tile"><b>{{ n }}</b><span>{{ sev }}</span></div>{% endfor %}
+</section>
+
+<section class="packages">
+  <h2 class="iz-title">Steps</h2>
+  {% for s in steps %}
+  <div class="iz-card mini strip-{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">
+    <div class="mini-text"><b>{{ s.order }}. {{ s.tool }}</b><span class="muted small">{{ s.reason }}</span><code>{{ s.argv|join:" " }}</code></div>
+    <span class="badge badge--{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">{{ s.status }}</span>
+  </div>
+  {% empty %}<p class="muted">No steps yet.</p>{% endfor %}
+</section>
+
+<section class="packages">
+  <div class="section-head">
+    <h2 class="iz-title">Findings</h2>
+    <div class="filters no-print">
+      <label class="sr-only" for="sev-filter">Severity</label>
+      <select id="sev-filter" class="select" data-keep>
+        <option value="">All severities</option>
+        {% for sev in counts %}<option value="{{ sev }}">{{ sev|capfirst }} ({{ counts|get_item:sev }})</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+  {% for f in findings %}
+  <article class="iz-card problem-card" data-severity="{{ f.severity }}">
+    <div class="problem-head"><span class="badge badge--{{ f.severity }}">{{ f.severity }}</span> <b>{{ f.step.tool }}</b> <code>{{ f.location }}</code></div>
+    <p>{{ f.title }}</p>
+    {% if f.detail.fixed %}<p class="muted small">Fix: upgrade to <b class="ink">{{ f.detail.fixed|last }}</b></p>{% endif %}
+  </article>
+  {% empty %}<p class="muted">{% if running %}No findings yet, the run is still going.{% else %}No findings recorded.{% endif %}</p>{% endfor %}
+  <p class="muted small" id="no-match" hidden>No findings match this filter.</p>
+</section>
+{% endblock %}

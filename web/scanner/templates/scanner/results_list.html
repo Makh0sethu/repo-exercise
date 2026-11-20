@@ -1,0 +1,28 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: your results{% endblock %}
+{% block crumbs %}<nav class="crumbs no-print" aria-label="Breadcrumb"><a href="{% url 'scanner:scan' %}">Scan</a><span aria-hidden="true">›</span><span aria-current="page">Results</span><a class="back" href="{% url 'scanner:scan' %}">← Scan</a></nav>{% endblock %}
+{% block content %}
+<header class="hero hero--results">
+  <div>
+    <h1 class="iz-title display">Your <b>Results</b></h1>
+    {% include "scanner/_title.html" %}
+    <p class="muted">Your last {{ items|length|default:"few" }} scans in this browser session. They're cleared when you close the browser or sign out.</p>
+  </div>
+  <div class="toolbar"><md-filled-button href="{% url 'scanner:scan' %}?new=1">New scan</md-filled-button></div>
+</header>
+{% for it in items %}
+<a class="iz-card result-row" href="{% url 'scanner:result' it.id %}">
+  <span class="result-main"><b>{% for name, kind, count in it.inputs %}{{ name }}{% if not forloop.last %} + {% endif %}{% endfor %}</b>
+    <span class="muted small">{{ it.at|date:"d M Y H:i" }} UTC</span></span>
+  <span class="result-stats">
+    <span class="badge badge--clean">{{ it.stats.checked }} checked</span>
+    {% if it.stats.vulnerable %}<span class="badge badge--high">{{ it.stats.vulnerable }} with problems</span>{% endif %}
+    {% if it.stats.critical_high %}<span class="badge badge--critical">{{ it.stats.critical_high }} critical/high</span>{% endif %}
+  </span>
+  <span aria-hidden="true">›</span>
+</a>
+{% empty %}
+<div class="iz-card panel empty"><b>No results in this session yet.</b> <span class="muted">Run a scan and it will appear here.</span>
+  <md-filled-button href="{% url 'scanner:scan' %}">Scan dependencies</md-filled-button></div>
+{% endfor %}
+{% endblock %}

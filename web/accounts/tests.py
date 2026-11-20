@@ -6,7 +6,7 @@ from django.test import TestCase, override_settings
 
 from audit.log import verify_chain
 from audit.models import AuditEvent
-from pipeline.models import Target
+from pipeline.models import Finding, Run, Step, Target
 
 USERS = "alice:admin,bob:operator,carol:auditor"
 
@@ -173,3 +173,90 @@ class RolesAndRunsTests(TestCase):
         self.client.post("/auth/logout/")
         self.assertTrue(AuditEvent.objects.filter(action="auth.logout", actor="github:bob").exists())
         self.assertEqual(self.client.get("/server/").status_code, 302)
+
+
+@override_settings(SENTINEL_GITHUB_USERS=USERS, SENTINEL_GITHUB_CLIENT_ID="cid", SENTINEL_BASE_URL="http://127.0.0.1:8000")
+class FlowTests(TestCase):
+    def setUp(self):
+        self.target = Target.objects.create(name="demo", git_url="https://github.com/o/demo")
+        self.run = Run.objects.create(target=self.target, pipeline=[], status="passed", requested_by="github:bob", commit_sha="a" * 40)
+        step = Step.objects.create(run=self.run, order=1, tool="npm_audit", reason="Check npm lockfile", status="passed", exit_code=0, argv=["npm", "audit"])
+        Finding.objects.create(run=self.run, step=step, severity="critical", title="Bad thing in lodash", location="lodash (package-lock.json)", detail={"fixed": ["4.17.21"]})
+        Finding.objects.create(run=self.run, step=step, severity="low", title="Minor thing", location="x")
+
+    def sign_in(self, uid, login, next_url=None):
+        r = self.client.get("/auth/github/login/" + (f"?next={urllib.parse.quote(next_url)}" if next_url else ""))
+        state = urllib.parse.parse_qs(urllib.parse.urlparse(r["Location"]).query)["state"][0]
+        with _GH(uid, login):
+            return self.client.get("/auth/github/callback/", {"code": "a", "state": state})
+
+    def nav(self):
+        return self.client.get("/").content.decode()
+
+    def test_nav_by_role(self):
+        self.sign_in(1001, "bob")                                   # operator
+        page = self.nav()
+        self.assertIn("Security runs", page); self.assertNotIn(">Admin", page)
+        self.assertIn("github:bob", page); self.assertIn("operator", page)
+        self.assertIn("Sign out", page); self.assertNotIn("Sign in with GitHub", page)
+        self.client.logout(); self.sign_in(1002, "carol")           # auditor
+        page = self.nav(); self.assertIn("Security runs", page); self.assertIn(">Admin", page)
+        self.client.logout(); self.sign_in(1, "alice")              # admin
+        self.assertIn(">Admin", self.nav())
+
+    def test_run_detail_shows_steps_findings_and_a_way_back(self):
+        self.sign_in(1001, "bob")
+        page = self.client.get(f"/server/runs/{self.run.pk}/")
+        self.assertContains(page, "Bad thing in lodash"); self.assertContains(page, "Check npm lockfile")
+        self.assertContains(page, "4.17.21"); self.assertContains(page, "← All runs"); self.assertContains(page, 'aria-label="Breadcrumb"')
+        body = page.content.decode()
+        self.assertLess(body.index("Bad thing in lodash"), body.index("Minor thing"))      # worst first
+
+    def test_run_page_for_a_run_in_progress_polls_its_status(self):
+        Run.objects.filter(pk=self.run.pk).update(status="running")
+        self.sign_in(1001, "bob")
+        self.assertContains(self.client.get(f"/server/runs/{self.run.pk}/"), f"/server/runs/{self.run.pk}/status/")
+        self.assertContains(self.client.get("/server/"), f"/server/runs/{self.run.pk}/status/")
+
+    def test_status_endpoint(self):
+        self.sign_in(1001, "bob")
+        j = self.client.get(f"/server/runs/{self.run.pk}/status/").json()
+        self.assertEqual((j["status"], j["done"]), ("passed", True))
+        Run.objects.filter(pk=self.run.pk).update(status="running")
+        self.assertFalse(self.client.get(f"/server/runs/{self.run.pk}/status/").json()["done"])
+
+    def test_run_pages_need_sign_in_and_permission(self):
+        self.assertEqual(self.client.get(f"/server/runs/{self.run.pk}/").status_code, 302)
+        self.assertEqual(self.client.get(f"/server/runs/{self.run.pk}/status/").status_code, 302)
+        User.objects.create_user("plain", password="pw-123456")
+        self.client.login(username="plain", password="pw-123456")
+        r = self.client.get(f"/server/runs/{self.run.pk}/")
+        self.assertContains(r, "permission to view security runs", status_code=403)
+        self.assertContains(r, 'aria-label="Main"', status_code=403)                      # friendly page, still has the nav
+        self.assertTrue(AuditEvent.objects.filter(action="auth.denied", actor="plain").exists())
+        self.assertEqual(self.client.get(f"/server/runs/{self.run.pk}/status/").status_code, 403)
+
+    def test_unknown_run_is_a_404_page(self):
+        self.sign_in(1001, "bob")
+        self.assertEqual(self.client.get("/server/runs/9999/").status_code, 404)
+
+    def test_sign_in_returns_you_to_the_page_you_wanted(self):
+        r = self.client.get(f"/server/runs/{self.run.pk}/")
+        self.assertIn("/auth/github/login/", r["Location"]); self.assertIn("next=", r["Location"])
+        r = self.sign_in(1001, "bob", next_url=f"/server/runs/{self.run.pk}/")
+        self.assertEqual(r["Location"], f"/server/runs/{self.run.pk}/")
+
+    def test_sign_in_button_remembers_the_current_page(self):
+        self.assertContains(self.client.get("/results/"), "/auth/github/login/?next=/results/")
+
+    def test_signing_in_keeps_results_but_signing_out_clears_them(self):
+        with mock.patch("scanner.scan._get_json", side_effect=lambda u, b=None, timeout=20: {"results": [{} for _ in b["queries"]]}):
+            self.client.post("/scan/", {"pasted": "django==4.2.1"})
+        self.sign_in(1001, "bob")
+        self.assertContains(self.client.get("/results/"), 'class="iz-card result-row"')     # survived sign-in
+        self.client.post("/auth/logout/")
+        self.assertContains(self.client.get("/results/"), "No results in this session yet")  # gone after sign-out
+
+    def test_after_sign_out_back_cannot_show_a_cached_signed_in_page(self):
+        self.sign_in(1001, "bob")
+        self.assertEqual(self.client.get("/server/")["Cache-Control"], "no-store, max-age=0")
