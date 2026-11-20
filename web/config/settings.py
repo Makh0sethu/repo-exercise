@@ -1,4 +1,4 @@
-"""Vulnwatch settings. Values for production come from environment variables."""
+"""Sentinel settings. Values for production come from environment variables."""
 import mimetypes
 import os
 from pathlib import Path
@@ -45,9 +45,9 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Uploads: 1 MB per scan, kept in memory only and never written to disk.
-VULNWATCH_MAX_UPLOAD = 1024 * 1024
-DATA_UPLOAD_MAX_MEMORY_SIZE = VULNWATCH_MAX_UPLOAD + 64 * 1024
-FILE_UPLOAD_MAX_MEMORY_SIZE = VULNWATCH_MAX_UPLOAD
+SENTINEL_MAX_UPLOAD = 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = SENTINEL_MAX_UPLOAD + 64 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = SENTINEL_MAX_UPLOAD
 FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler"]
 
 X_FRAME_OPTIONS = "DENY"

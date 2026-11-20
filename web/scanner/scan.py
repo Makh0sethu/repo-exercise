@@ -15,7 +15,7 @@ from .logos import logo_for
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
 OSV_VULN = "https://api.osv.dev/v1/vulns/{}"
-UA = {"User-Agent": "vulnwatch/0.1", "Content-Type": "application/json"}
+UA = {"User-Agent": "sentinel/0.1", "Content-Type": "application/json"}
 SEVERITIES = ["CRITICAL", "HIGH", "MODERATE", "LOW", "UNKNOWN"]
 RANK = {s: 4 - i for i, s in enumerate(SEVERITIES)}
 PENDING_SOURCES = ["NVD", "CVE.org", "CISA KEV", "RetireJS", "News feeds"]

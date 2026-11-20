@@ -1,4 +1,4 @@
-// Vulnwatch page behaviour: scan-page preview, results filters and downloads.
+// Sentinel page behaviour: scan-page preview, results filters and downloads.
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -93,7 +93,7 @@ if (dataTag) {
 
   $("#dl-json")?.addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(JSON.parse(dataTag.textContent), null, 2)], { type: "application/json" });
-    const a = el("a", { href: URL.createObjectURL(blob), download: `vulnwatch-${new Date().toISOString().slice(0, 10)}.json` });
+    const a = el("a", { href: URL.createObjectURL(blob), download: `sentinel-${new Date().toISOString().slice(0, 10)}.json` });
     document.body.append(a); a.click(); a.remove();
   });
   $("#dl-pdf")?.addEventListener("click", () => window.print());

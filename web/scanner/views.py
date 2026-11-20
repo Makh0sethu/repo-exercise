@@ -22,7 +22,7 @@ def _read_inputs(request):
     pasted = request.POST.get("pasted", "")
     other = request.POST.get("other", "")
     total = sum(f.size for f in files) + len(pasted.encode()) + len(other.encode())
-    if total > settings.VULNWATCH_MAX_UPLOAD:
+    if total > settings.SENTINEL_MAX_UPLOAD:
         raise TooLarge()
     uploads = [(f.name, f.read().decode("utf-8", errors="replace")) for f in files]
     return parse_inputs(uploads, pasted, other)

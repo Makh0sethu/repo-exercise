@@ -1,4 +1,4 @@
-# Vulnwatch
+# Sentinel
 
 ## Summary
 A public web app for any developer. You upload or paste your dependency files, and it checks every package online for known vulnerabilities and recent security news. Results appear on a dashboard. Version 1 is a one-off scan: no accounts, and nothing the user uploads is saved.
@@ -102,14 +102,14 @@ Tokens live in `web/scanner/static/scanner/izitho-m3.css` and set Material Web's
 ## Plan and sequencing
 1. Django project + Postgres + Material Web base layout + upload/paste form. Run locally.
 2. Parsers + unit tests. **Validate first** with real files from your projects.
-3. OSV.dev lookup (port from the draft `vulnwatch/vulnwatch.py`) + results page.
+3. OSV.dev lookup (port from the draft `cli-draft/sentinel_cli.py`) + results page.
 4. Enrichment: cve.org, NVD (API key), CISA KEV. Merge/deduplicate.
 5. RetireJS. PostgreSQL/PostGIS via NVD.
 6. News cache job + matching.
 7. Dashboard polish + PDF/JSON export.
 8. Hardening: rate limit, limits, ZAP baseline. Deploy to your server.
 
-The draft in `vulnwatch/` (stdlib CLI) is reference code. Reuse its OSV lookup, feed parsing, CVSS bucketing and dashboard layout, and drop its `discover` command.
+The draft in `cli-draft/` (stdlib CLI) is reference code. Reuse its OSV lookup, feed parsing, CVSS bucketing and dashboard layout, and drop its `discover` command.
 
 ## Open questions
 - "CVE partnership": recorded here as pulling cve.org records. If it instead means applying to become a CVE Numbering Authority (CNA), that is a separate application to the CVE Program, not code.

@@ -1,6 +1,6 @@
-# Vulnwatch web app
+# Sentinel web app
 
-Django app for the plan in [`../vulnwatch-spec.md`](../vulnwatch-spec.md), styled with **izitho M3**: Material Web components themed by `scanner/static/scanner/izitho-m3.css`.
+Django app for the plan in [`../sentinel-spec.md`](../sentinel-spec.md), styled with **izitho M3**: Material Web components themed by `scanner/static/scanner/izitho-m3.css`.
 
 ## Run it locally
 

@@ -21,7 +21,7 @@
   --iz-purple: #8257E6;
   --iz-red:    #D93636;
 
-  /* Vulnwatch meaning of each colour */
+  /* Sentinel meaning of each colour */
   --iz-exploited: var(--iz-red);      /* CISA KEV: actively exploited */
   --iz-critical:  var(--iz-pink);
   --iz-high:      var(--iz-orange);

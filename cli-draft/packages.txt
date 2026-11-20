@@ -1,4 +1,4 @@
-# Sample inventory (replace with `python vulnwatch.py discover`)
+# Sample inventory (replace with `python sentinel_cli.py discover`)
 requests==2.19.0
 django==2.2.0
 flask==0.12

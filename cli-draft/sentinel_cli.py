@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vulnwatch - track installed libraries, check them for known vulnerabilities,
+"""sentinel - track installed libraries, check them for known vulnerabilities,
 scan the web for recent security stories about them, and build an HTML dashboard.
 
 Standard library only. Data sources:
@@ -8,9 +8,9 @@ Standard library only. Data sources:
   * Hacker News (Algolia search)   - recent discussion per package
 
 Usage:
-  python vulnwatch.py discover            # write inventory of this system to packages.txt
-  python vulnwatch.py scan                # read packages.txt, query the web, write dashboard.html
-  python vulnwatch.py discover scan       # both
+  python sentinel_cli.py discover            # write inventory of this system to packages.txt
+  python sentinel_cli.py scan                # read packages.txt, query the web, write dashboard.html
+  python sentinel_cli.py discover scan       # both
 """
 import argparse
 import html
@@ -40,7 +40,7 @@ FEEDS = {
     "GitHub Security Blog": "https://github.blog/security/feed/",
     "SecurityWeek": "https://feeds.feedburner.com/securityweek",
 }
-UA = {"User-Agent": "vulnwatch/1.0 (local dependency scanner)"}
+UA = {"User-Agent": "sentinel/1.0 (local dependency scanner)"}
 ECOSYSTEMS = {"pypi": "PyPI", "npm": "npm", "go": "Go", "crates": "crates.io",
               "cargo": "crates.io", "maven": "Maven", "nuget": "NuGet",
               "rubygems": "RubyGems", "gem": "RubyGems", "packagist": "Packagist"}
@@ -87,7 +87,7 @@ def discover():
 
 def write_inventory(pkgs, path):
     lines = [
-        "# vulnwatch inventory - one package per line.",
+        "# sentinel inventory - one package per line.",
         "# Formats:  name==version        (PyPI)",
         "#           npm:name@version     (also go:, crates:, maven:, nuget:, gem:, packagist:)",
         f"# Generated {datetime.now():%Y-%m-%d %H:%M} - edit freely; add your own entries.",
