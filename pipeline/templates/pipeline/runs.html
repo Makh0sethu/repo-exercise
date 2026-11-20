@@ -1,0 +1,53 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: security runs{% endblock %}
+{% block content %}
+<div id="page-state" data-key="runs" hidden></div>
+<header class="hero hero--results">
+  <div>
+    <h1 class="iz-title display">Security <b>Runs</b></h1>
+    {% include "scanner/_title.html" %}
+    <p class="muted">Signed in as {{ who }}. Everything here is on the audit trail.</p>
+  </div>
+</header>
+
+{% if can_run %}
+<form method="post" action="{% url 'pipeline:start' %}" class="iz-card panel" data-keep-state>{% csrf_token %}
+  <h2 class="iz-title">Start a <b>run</b></h2>
+  {% if targets %}
+  <div class="actions">
+    <select name="target" id="target-select" aria-label="Target" class="select">
+      {% for t in targets %}<option value="{{ t.pk }}">{{ t.name }} · {{ t.ref }}</option>{% endfor %}
+    </select>
+    <md-filled-button type="submit">Run pipeline</md-filled-button>
+  </div>
+  {% else %}<p class="muted">No targets yet. An admin adds them in the admin area.</p>{% endif %}
+</form>
+{% endif %}
+
+<section class="packages">
+  {% for run in runs %}
+  <details class="iz-card pkg strip-{% if run.status == 'passed' %}clean{% elif run.status == 'failed' or run.status == 'error' %}critical{% else %}unknown{% endif %}" data-run="{{ run.pk }}"{% if forloop.first %} open{% endif %}
+    {% if run.status == 'pending' or run.status == 'running' %} data-status-url="{% url 'pipeline:run_status' run.pk %}"{% endif %}>
+    <summary>
+      <span class="pkg-name">Run {{ run.pk }} · {{ run.target.name }}</span>
+      <code class="ver">{{ run.commit_sha|slice:":10"|default:"no commit yet" }}</code>
+      <span class="grow"></span>
+      <span class="muted small">by {{ run.requested_by|default:"system" }} · {{ run.created_at|date:"d M Y H:i" }}</span>
+      <span class="badge badge--{% if run.status == 'passed' %}clean{% elif run.status == 'failed' or run.status == 'error' %}critical{% else %}unknown{% endif %}">{{ run.status }}</span>
+      <span class="badge badge--news">{{ run.findings.count }} findings</span>
+      <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
+    <div class="problems">
+      {% for s in run.steps.all %}
+      <article class="problem">
+        <div class="problem-head"><span class="badge badge--{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">{{ s.status }}</span> {{ s.tool }}</div>
+        <p><b>Why:</b> {{ s.reason }}</p>
+        <p class="muted small">exit {{ s.exit_code }} · {{ s.findings.count }} findings</p>
+      </article>
+      {% empty %}<p class="muted small">Waiting to start…</p>{% endfor %}
+      <p class="open-run"><a class="nav-btn" href="{% url 'pipeline:run' run.pk %}">Open run {{ run.pk }} and its findings →</a></p>
+    </div>
+  </details>
+  {% empty %}<p class="muted">No runs yet.</p>{% endfor %}
+</section>
+{% endblock %}

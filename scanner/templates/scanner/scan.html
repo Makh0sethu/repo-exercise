@@ -5,7 +5,7 @@
   <div>
     <h1 class="iz-title display"><b>Sentinel</b></h1>
     {% include "scanner/_title.html" %}
-    <p class="lead">Check your project's dependencies for known vulnerabilities and recent security news. Nothing you upload is stored.</p>
+    <p class="lead">Check your project's dependencies for known vulnerabilities and recent security news.</p>
   </div>
 </header>
 
@@ -13,14 +13,19 @@
   <li class="iz-step" data-step="01" style="--tab: var(--iz-pink)"><small>STEP ONE</small><b>Upload</b><p>Drop in requirements.txt, package.json or package-lock.json.</p></li>
   <li class="iz-step" data-step="02" style="--tab: var(--iz-blue)"><small>STEP TWO</small><b>Check</b><p>OSV.dev, NVD, CVE.org, CISA KEV and RetireJS are searched.</p></li>
   <li class="iz-step" data-step="03" style="--tab: var(--iz-teal)"><small>STEP THREE</small><b>Review</b><p>See problems ranked by danger, with the version that fixes each.</p></li>
-  <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON. We keep nothing.</p></li>
+  <li class="iz-step" data-step="04" style="--tab: var(--iz-orange)"><small>STEP FOUR</small><b>Export</b><p>Download the report as PDF or JSON to keep your own copy.</p></li>
 </ol>
 
-<form id="scan-form" class="iz-card panel" method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
+<form id="scan-form" class="iz-card panel" data-keep-state method="post" action="{% url 'scanner:run' %}" enctype="multipart/form-data" data-preview="{% url 'scanner:parse' %}">
   {% csrf_token %}
   <div>
     <h2 class="iz-title">New <b>Scan</b></h2>
     {% include "scanner/_title.html" %}
+  </div>
+
+  <div class="note restored no-print" id="restored" hidden role="status">
+    <span>Restored what you had entered earlier in this session.</span>
+    <button type="button" class="linklike" id="clear-form">Clear and start fresh</button>
   </div>
 
   {% if error %}
@@ -42,13 +47,13 @@
       <ul class="file-list" id="file-list" aria-live="polite"></ul>
 
       <label class="field-label" for="pasted">…or paste file contents</label>
-      <textarea id="pasted" name="pasted" rows="5" spellcheck="false" placeholder="django==4.2.1&#10;requests&#10;psycopg2-binary>=2.9"></textarea>
+      <textarea id="pasted" name="pasted" rows="5" spellcheck="false" placeholder="django==4.2.1&#10;requests&#10;psycopg2-binary>=2.9">{{ form.pasted }}</textarea>
     </div>
 
     <div class="col col--narrow">
       <label class="field-label" for="other">Other software</label>
       <p class="muted small">Databases and tools that aren't in your files. One per line: name and version.</p>
-      <textarea id="other" name="other" rows="5" spellcheck="false" placeholder="postgresql 15.4&#10;postgis 3.3.2"></textarea>
+      <textarea id="other" name="other" rows="5" spellcheck="false" placeholder="postgresql 15.4&#10;postgis 3.3.2">{{ form.other }}</textarea>
       <div class="tip">
         <span class="tip-icon" aria-hidden="true">!</span>
         <p>For exact results, upload <b>package-lock.json</b> or the output of <b>pip freeze</b>. Packages without a version are checked by name only.</p>
@@ -62,6 +67,7 @@
     <div class="alert alert--warn" id="detected-bad" hidden></div>
   </section>
 
+  <p class="muted small privacy">By scanning you agree that the time, your IP address and the package names are logged for security and debugging, and deleted after {{ retention_days }} days. File contents are not saved.</p>
   <div class="actions">
     <p class="muted small" id="ready">Add a file, paste a list or fill in Other software to begin.</p>
     <md-filled-button type="submit" id="scan-btn">Scan dependencies</md-filled-button>

@@ -133,3 +133,136 @@ if (dataTag) {
   window.addEventListener("beforeprint", () => $$("details.pkg").forEach((d) => { d.dataset.wasOpen = d.open; d.open = true; }));
   window.addEventListener("afterprint", () => $$("details.pkg").forEach((d) => { d.open = d.dataset.wasOpen === "true"; }));
 }
+
+
+// ---------------------------------------------------------------- navigation and session state
+// State lives in sessionStorage: it belongs to this tab, survives Back/Forward and reloads,
+// and is gone when the tab closes. Pages themselves are never cached (the server sends no-store).
+const store = {
+  get(k) { try { return JSON.parse(sessionStorage.getItem("sentinel:" + k)); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem("sentinel:" + k, JSON.stringify(v)); } catch { /* storage full or blocked: carry on without it */ } },
+  del(k) { try { sessionStorage.removeItem("sentinel:" + k); } catch { /* ignore */ } },
+};
+const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+// Back links: go back in history when we came from this site (keeps scroll and state), else follow the link.
+$$("a.back[data-back]").forEach((a) => a.addEventListener("click", (e) => {
+  try {
+    if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); }
+  } catch { /* fall through to the normal link */ }
+}));
+
+// Scan page: remember what was entered (text and file contents) for this session.
+const scanForm = $("#scan-form");
+if (scanForm) {
+  const KEY = "form", pasted = $("#pasted"), other = $("#other"), files = $("#files");
+  const note = $("#restored");
+
+  async function snapshot() {
+    const kept = []; let total = 0;
+    for (const f of files.files) {            // file contents are kept only while the tab is open, up to ~1 MB
+      if (total + f.size > 900000) break;
+      total += f.size; kept.push({ name: f.name, text: await f.text() });
+    }
+    store.set(KEY, { pasted: pasted.value, other: other.value, files: kept });
+  }
+  const save = debounce(snapshot, 250);
+  [pasted, other].forEach((t) => t.addEventListener("input", save));
+  files.addEventListener("change", snapshot);
+
+  function fire(node, type) { node.dispatchEvent(new Event(type, { bubbles: true })); }
+  function restore() {
+    const s = store.get(KEY); if (!s) return;
+    let did = false;
+    if (!pasted.value && s.pasted) { pasted.value = s.pasted; fire(pasted, "input"); did = true; }
+    if (!other.value && s.other) { other.value = s.other; fire(other, "input"); did = true; }
+    if (!files.files.length && s.files?.length) {
+      const dt = new DataTransfer();
+      s.files.forEach((f) => dt.items.add(new File([f.text], f.name, { type: "text/plain" })));
+      files.files = dt.files; fire(files, "change"); did = true;
+    }
+    if (did && note) note.hidden = false;
+  }
+  function clearAll() {
+    store.del(KEY);
+    pasted.value = ""; other.value = ""; files.value = "";
+    $("#file-list").replaceChildren(); $("#detected").hidden = true; $("#detected-list").replaceChildren();
+    $("#ready").textContent = "Add a file, paste a list or fill in Other software to begin.";
+    if (note) note.hidden = true;
+  }
+  $("#clear-form")?.addEventListener("click", clearAll);
+
+  if (new URLSearchParams(location.search).get("new") === "1") {   // "New scan" starts clean
+    store.del(KEY); history.replaceState(null, "", location.pathname);
+  } else {
+    restore();
+  }
+  // Coming back (Back button, bfcache) must not show a stuck "Scanning…" button.
+  window.addEventListener("pageshow", () => {
+    $("#progress").hidden = true; const b = $("#scan-btn"); b.disabled = false; b.textContent = "Scan dependencies";
+    restore();
+  });
+}
+
+// Results page: remember filters and which packages were open, so Back returns you to the same view.
+const pageState = $("#page-state");
+if (pageState && $("#scan-data")) {
+  const key = pageState.dataset.key, search = $("#pkg-search");
+  const chips = $$("md-filter-chip[data-filter]");
+  const snap = () => store.set(key, {
+    q: search?.value || "",
+    show: Object.fromEntries(chips.map((c) => [c.dataset.filter, c.selected])),
+    open: $$("details.pkg[open]").map((d) => d.dataset.name),
+  });
+  const saved = store.get(key);
+  if (saved) {
+    if (search) { search.value = saved.q || ""; search.dispatchEvent(new Event("input")); }
+    $$("details.pkg").forEach((d) => { d.open = (saved.open || []).includes(d.dataset.name); });
+    customElements.whenDefined("md-filter-chip").then(() => chips.forEach((c) => {
+      const want = saved.show?.[c.dataset.filter];
+      if (want === false && c.selected) { c.selected = false; c.dispatchEvent(new Event("click")); c.selected = false; }
+    }));
+  }
+  search?.addEventListener("input", debounce(snap, 200));
+  chips.forEach((c) => c.addEventListener("click", () => setTimeout(snap, 50)));
+  $$("details.pkg").forEach((d) => d.addEventListener("toggle", snap));
+}
+
+// Run detail: severity filter, remembered for the session.
+const sev = $("#sev-filter");
+if (sev && pageState) {
+  const key = pageState.dataset.key + ":sev";
+  const apply = () => {
+    let n = 0;
+    $$("[data-severity]").forEach((a) => { const ok = !sev.value || a.dataset.severity === sev.value; a.hidden = !ok; n += ok; });
+    $("#no-match").hidden = n > 0;
+    store.set(key, sev.value);
+  };
+  const saved = store.get(key); if (saved) sev.value = saved;
+  sev.addEventListener("change", apply); apply();
+}
+
+// Runs list: remember which runs were open and the chosen target.
+if (pageState?.dataset.key === "runs") {
+  const open = store.get("runs:open"), target = $("#target-select");
+  if (open) $$("details[data-run]").forEach((d) => { d.open = open.includes(d.dataset.run); });
+  $$("details[data-run]").forEach((d) => d.addEventListener("toggle", () =>
+    store.set("runs:open", $$("details[data-run][open]").map((x) => x.dataset.run))));
+  const chosen = store.get("runs:target"); if (chosen && target) target.value = chosen;
+  target?.addEventListener("change", () => store.set("runs:target", target.value));
+}
+
+// A run in progress: check its status every few seconds and reload once when it finishes.
+const watched = $("[data-status-url]");
+if (watched) {
+  let tries = 0;
+  const poll = async () => {
+    if (++tries > 200) return;
+    try {
+      const r = await fetch(watched.dataset.statusUrl, { headers: { Accept: "application/json" }, cache: "no-store" });
+      if (r.ok && (await r.json()).done) { location.reload(); return; }
+    } catch { /* offline: try again */ }
+    setTimeout(poll, 3000);
+  };
+  setTimeout(poll, 3000);
+}
