@@ -73,6 +73,12 @@ SENTINEL_ADMIN_PATH = os.environ.get("SENTINEL_ADMIN_PATH", "admin/").strip("/")
 # Only trust X-Forwarded-For when Sentinel sits behind your own proxy (nginx).
 # Otherwise anyone can fake their IP with that header.
 SENTINEL_TRUST_X_FORWARDED_FOR = os.environ.get("SENTINEL_TRUST_X_FORWARDED_FOR", "0") == "1"
+# Secure cookies need HTTPS. On by default in production; set SENTINEL_HTTPS=0 to test
+# a production-mode copy over plain http on your own machine (e.g. a pen test).
+SENTINEL_HTTPS = os.environ.get("SENTINEL_HTTPS", "0" if DEBUG else "1") == "1"
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = SENTINEL_HTTPS
+if SENTINEL_HTTPS:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if SENTINEL_TRUST_X_FORWARDED_FOR else None
 SENTINEL_LOG_RETENTION_DAYS = int(os.environ.get("SENTINEL_LOG_RETENTION_DAYS", "30"))
 LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,6 +110,5 @@ FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler
 
 X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = "same-origin"
-SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = not DEBUG
 USE_TZ = True
 TIME_ZONE = "UTC"

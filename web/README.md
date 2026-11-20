@@ -49,15 +49,52 @@ Run it from Windows Task Scheduler on your machine, or cron on the server: `0 3 
 
 The pages tell visitors that their IP and package names are logged and for how long, because IP addresses are personal data under most data-protection laws.
 
-## Pen testing
-Point your pen-testing tool at a local or staging copy, not the live server: `DJANGO_DEBUG=0 DJANGO_SECRET_KEY=test DJANGO_ALLOWED_HOSTS=127.0.0.1` with `manage.py runserver`, or gunicorn. Set the tool's User-Agent to something you'll recognise, then filter the access log by it, or by your IP, to see every request it made. Worth focusing on:
-- **Upload handling:** files over 1 MB, malformed JSON, huge lockfiles, odd encodings, package names containing HTML/JS (they must appear escaped in results and in the admin).
-- **CSRF** on `/scan/` and `/parse/`, and header spoofing (`X-Forwarded-For` must not change the logged IP unless trusted).
-- **Admin login:** there's no brute-force lockout yet. If the test confirms that, add `django-axes` before going live.
-- **Abuse:** there's no rate limit yet (spec step 8). Expect a load or flood test to succeed until it's added.
+## Pen testing with ARTEX
+[ARTEX](https://github.com/BaaRai/ARTEX) is an autonomous, AI-driven pen-testing platform. It runs real attack tools from a Docker container and records every request as evidence. Only point it at a copy of Sentinel on your own machine.
 
-## Not connected yet (spec steps 4–6)
-NVD, CVE.org, CISA KEV, RetireJS and the news feeds. The page lists them as "not connected yet" in the sources bar instead of pretending they ran. PostgreSQL/PostGIS are read but not checked until NVD is connected.
+**1. Run Sentinel in production mode, reachable from Docker** (PowerShell, in `web\`):
+```powershell
+$env:DJANGO_DEBUG="0"; $env:DJANGO_SECRET_KEY="pentest-only-key"; $env:SENTINEL_HTTPS="0"
+$env:DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,host.docker.internal"
+.\.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000 --insecure
+```
+- `0.0.0.0` lets the ARTEX container reach it. Windows may ask about the firewall: allow **Private networks** only.
+- `--insecure` serves CSS/JS while `DEBUG` is off.
+- `SENTINEL_HTTPS=0` allows the security cookie over plain http.
+
+**2. Make test accounts** in http://127.0.0.1:8000/admin/: a staff user *not* in Sentinel auditors, and one in it. Give both to ARTEX so it can try to reach scan logs it shouldn't.
+
+**3. Start ARTEX** (Docker Desktop, separate folder):
+```powershell
+git clone https://github.com/BaaRai/ARTEX.git
+cd ARTEX
+copy .env.example .env      # set POSTGRES_PASSWORD and your LLM key
+docker compose up -d --build
+docker compose logs artex | findstr "Setup token"
+```
+Open http://localhost:8787 and enter the setup token.
+
+**4. Limit it before starting a task:**
+- **Scope:** only `host.docker.internal:8000`. `host.docker.internal` is your own PC, so a loose scope lets it probe everything else running there.
+- **Noise:** System settings → Target noise → `balanced`. The Django dev server is single-process and a flood just takes it down.
+- **Budget:** set `ARTEX_TASK_BUDGET_TOKENS` / `ARTEX_TASK_BUDGET_TURNS` in `.env`. Every step uses your LLM key.
+- **Approvals:** for the first run, require approval for Bash tool calls (interception rules), so you see what it runs.
+
+**5. Goal to give it**, for example: *"Test the Sentinel web app at http://host.docker.internal:8000. Focus on:*
+- *XSS via package names in uploaded requirements.txt / package.json*
+- *CSRF on /scan/ and /parse/*
+- *upload size and parser abuse (huge or malformed lockfiles)*
+- *IP spoofing with X-Forwarded-For*
+- *access control on /admin/scanner/scanlog/ with the two test accounts*
+- *admin login brute force*
+- *information leakage."*
+
+**6. Match its findings to Sentinel's logs.** ARTEX's requests come from Docker's address, usually `172.x.x.x` or your PC's vEthernet IP; the first lines in the access log show which.
+- `logs\access.jsonl` has every request it made, with status codes. Filter by that IP: `Select-String '"ip": "172.' logs\access.jsonl`.
+- Admin → Scan logs → search the IP to see every scan it submitted, including failed ones.
+- A finding in ARTEX has the exact request; its `X-Request-ID` response header leads to the matching log line.
+
+**Expected findings until spec step 8 is done:** there's no rate limit on scans and no lockout on the admin login (add `django-axes`). Anything else it proves is a real bug.
 
 ## Assets
 - `static/scanner/logos/*.png`: 128 px PNGs made from [Devicon](https://devicon.dev) (MIT, see `DEVICON-LICENSE.txt`). The logos are trademarks of their projects. Packages without their own logo get their ecosystem's logo (Python or Node.js). Add a logo by dropping a PNG in and mapping it in `scanner/logos.py`.
