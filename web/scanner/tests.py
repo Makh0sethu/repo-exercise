@@ -62,12 +62,11 @@ class ViewTests(SimpleTestCase):
         r = self.client.get("/")
         self.assertContains(r, "Scan dependencies")
 
-    def test_demo_renders_logos_and_problems(self):
-        r = self.client.get("/demo/")
-        self.assertContains(r, "CVE-2018-18074")
-        self.assertContains(r, "scanner/logos/django.png")
-        self.assertContains(r, "scanner/logos/python.png")   # fallback for packages without their own logo
-        self.assertContains(r, 'id="scan-data"')
+    def test_theme_defaults_to_light_with_switch(self):
+        r = self.client.get("/")
+        self.assertContains(r, '<html lang="en" data-theme="light">')
+        self.assertContains(r, 'id="theme-toggle"')
+        self.assertEqual(self.client.get("/demo/").status_code, 404)
 
     def test_preview_lists_packages(self):
         r = self.client.post("/parse/", {"pasted": "django==4.2.1\nrequests", "other": "postgresql 15.4"})
@@ -88,6 +87,16 @@ class ViewTests(SimpleTestCase):
         with mock.patch("scanner.scan._get_json", side_effect=OSError("offline")):
             r = self.client.post("/scan/", {"pasted": "django==4.2.1"})
         self.assertContains(r, "OSV.dev could not be reached")
+        self.assertContains(r, "Not checked · 1")
+        self.assertNotContains(r, "✓ clean")
+
+    def test_other_software_is_not_called_clean(self):
+        def fake(url, body=None, timeout=20):
+            return {"results": [{} for _ in body["queries"]]}
+        with mock.patch("scanner.scan._get_json", side_effect=fake):
+            r = self.client.post("/scan/", {"pasted": "numpy==2.1.3", "other": "postgresql 15.4"})
+        self.assertContains(r, "Needs NVD, not connected yet")
+        self.assertContains(r, "1 of 1 checked")
 
     def test_scan_with_osv_results(self):
         def fake(url, body=None, timeout=20):
@@ -101,3 +110,12 @@ class ViewTests(SimpleTestCase):
             r = self.client.post("/scan/", {"pasted": "django==4.2.1"})
         self.assertContains(r, "CVE-2023-36053")
         self.assertContains(r, "4.2.3")
+        self.assertContains(r, "scanner/logos/django.png")
+        self.assertContains(r, 'id="scan-data"')
+
+    def test_package_without_logo_gets_ecosystem_logo(self):
+        def fake(url, body=None, timeout=20):
+            return {"results": [{} for _ in body["queries"]]}
+        with mock.patch("scanner.scan._get_json", side_effect=fake):
+            r = self.client.post("/scan/", {"pasted": "requests==2.32.0"})
+        self.assertContains(r, "scanner/logos/python.png")

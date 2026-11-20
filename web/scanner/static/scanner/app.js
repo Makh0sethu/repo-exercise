@@ -24,6 +24,19 @@ function plainIcon(name) {
   return el("span", { class: "logo" }, svg);
 }
 
+// ---------------------------------------------------------------- theme switch (light by default)
+const toggle = $("#theme-toggle");
+if (toggle) {
+  const sync = () => toggle.setAttribute("aria-pressed", String(document.documentElement.dataset.theme === "dark"));
+  sync();
+  toggle.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("sentinel-theme", next); } catch (e) {}
+    sync();
+  });
+}
+
 // ---------------------------------------------------------------- scan page
 const form = $("#scan-form");
 if (form) {
@@ -73,7 +86,7 @@ if (form) {
 // ---------------------------------------------------------------- results page
 const dataTag = $("#scan-data");
 if (dataTag) {
-  const show = { vuln: true, clean: true };
+  const show = { vuln: true, clean: true, unchecked: true };
   const search = $("#pkg-search");
 
   function applyFilters() {

@@ -124,7 +124,14 @@ def run_scan(packages):
     return build_result(packages, vulns, sources, news=[])
 
 
-def build_result(packages, vulns, sources, news, sample=False):
+def unchecked_reason(ecosystem, sources):
+    """Why a package could not be checked, or None when it was."""
+    if ecosystem in ("PyPI", "npm"):
+        return None if sources.get("OSV.dev") == "ok" else "OSV.dev could not be reached"
+    return None if sources.get("NVD") == "ok" else "needs NVD, not connected yet"
+
+
+def build_result(packages, vulns, sources, news):
     """Shape everything the dashboard and the JSON download need."""
     rows = []
     for p in packages:
@@ -135,7 +142,9 @@ def build_result(packages, vulns, sources, news, sample=False):
         logo, own = logo_for(p.ecosystem, p.name)
         worst = vs[0]["severity"] if vs else None
         pkg_news = [n for n in news if p.name.lower() in [m.lower() for m in n["matches"]]]
+        reason = unchecked_reason(p.ecosystem, sources)
         rows.append({
+            "checked": reason is None, "unchecked_reason": reason,
             "ecosystem": p.ecosystem, "name": p.name, "version": p.version, "spec": p.spec,
             "exact": bool(p.version), "logo": logo, "own_logo": own,
             "vulns": vs, "worst": worst, "worst_class": (worst or "clean").lower(),
@@ -151,25 +160,29 @@ def build_result(packages, vulns, sources, news, sample=False):
     counts = {s: sum(v["severity"] == s for v in all_v) for s in SEVERITIES}
     peak = max(counts.values(), default=0) or 1
     vulnerable = [r for r in rows if r["vulns"]]
+    clean = [r for r in rows if r["checked"] and not r["vulns"]]
+    unchecked = [r for r in rows if not r["checked"]]
+    checked = len(rows) - len(unchecked)
     fixable = sum(bool(v["fixed"]) for v in all_v)
     return {
         "generated": datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
-        "sample": sample,
         "packages": rows,
         "vulnerable": vulnerable,
-        "clean": [r for r in rows if not r["vulns"]],
+        "clean": clean,
+        "unchecked": unchecked,
         "news": news,
         "sources": [{"name": k, "status": v} for k, v in sources.items()],
         "stats": {
             "packages": len(rows),
+            "checked": checked,
             "vulnerable": len(vulnerable),
             "exploited": sum(r["exploited"] for r in rows),
             "critical_high": counts["CRITICAL"] + counts["HIGH"],
             "news": len(news),
             "problems": len(all_v),
             "fixable": fixable,
-            "clean_pct": round(100 * (len(rows) - len(vulnerable)) / len(rows)) if rows else 0,
-            "fixable_pct": round(100 * fixable / len(all_v)) if all_v else 100,
+            "clean_pct": round(100 * len(clean) / checked) if checked else None,
+            "fixable_pct": round(100 * fixable / len(all_v)) if all_v else None,
         },
         "bars": [{"label": s.title(), "cls": s.lower(), "count": counts[s],
                   "pct": max(2, round(100 * counts[s] / peak))} for s in SEVERITIES[:4]],

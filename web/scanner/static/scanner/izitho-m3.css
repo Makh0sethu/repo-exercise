@@ -57,13 +57,6 @@
   --md-sys-shape-corner-large: var(--iz-radius-card);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --iz-bg: #1D2128; --iz-card: #21262E;
-    --iz-shadow-dark: #15181D; --iz-shadow-light: #2B313B;
-    --iz-ink: #E9EDF3; --iz-ink-2: #A3ACBC; --iz-line: #303743;
-  }
-}
 :root[data-theme="dark"] {
   --iz-bg: #1D2128; --iz-card: #21262E;
   --iz-shadow-dark: #15181D; --iz-shadow-light: #2B313B;

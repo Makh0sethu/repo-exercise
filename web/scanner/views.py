@@ -3,7 +3,6 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
-from .demo import demo_result
 from .logos import logo_for
 from .parsers import parse_inputs
 from .scan import run_scan
@@ -64,11 +63,3 @@ def run_scan_view(request):
     result["unreadable"] = parsed.unreadable
     return render(request, "scanner/results.html", {"r": result})
 
-
-@require_GET
-def demo(request):
-    result = demo_result()
-    result["inputs"] = [("requirements.txt", "requirements.txt", 9), ("package.json", "package.json", 3),
-                        ("Other software", "other", 2)]
-    result["unreadable"] = []
-    return render(request, "scanner/results.html", {"r": result})

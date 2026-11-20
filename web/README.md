@@ -13,7 +13,8 @@ python manage.py runserver
 ```
 
 - http://127.0.0.1:8000/: scan page (upload, paste, Other software, live "Detected packages")
-- http://127.0.0.1:8000/demo/: results dashboard with sample data, no network needed
+- Light theme by default. The sun/moon button top-right switches to dark, and the browser remembers the choice.
+- Packages a source couldn't check are shown as **Not checked** with the reason, never as clean.
 
 ## What works now
 - Reads `requirements.txt`, `package.json`, `package-lock.json` (v1–v3) and the Other software box. Lines it can't read are shown, never dropped.
