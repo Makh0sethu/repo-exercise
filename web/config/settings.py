@@ -1,6 +1,12 @@
 """Vulnwatch settings. Values for production come from environment variables."""
+import mimetypes
 import os
 from pathlib import Path
+
+# Windows can map .js/.css to text/plain in the registry, and browsers then refuse
+# the stylesheet and the Material Web module. Force the correct types.
+mimetypes.add_type("text/css", ".css", True)
+mimetypes.add_type("text/javascript", ".js", True)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
