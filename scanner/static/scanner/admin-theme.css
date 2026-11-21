@@ -1,0 +1,155 @@
+/* Sentinel skin for the Django admin. Maps Django's CSS variables onto the app's izitho tokens
+   (izitho-m3.css + app.css are loaded first), so light/dark and every colour come from one place. */
+html:root, html[data-theme="light"], html[data-theme="dark"], html[data-theme="auto"] {  /* beats Django's own html[data-theme] variable blocks */
+  --primary: var(--iz-blue);
+  --secondary: var(--iz-card);
+  --accent: var(--iz-purple);
+  --primary-fg: #fff;
+  --body-fg: var(--iz-ink);
+  --body-bg: var(--iz-bg);
+  --body-quiet-color: var(--iz-ink-2);
+  --body-loud-color: var(--iz-ink);
+  --header-color: var(--iz-ink);
+  --header-branding-color: var(--iz-ink);
+  --header-bg: var(--iz-bg);
+  --header-link-color: var(--iz-ink);
+  --breadcrumbs-fg: var(--iz-ink-2);
+  --breadcrumbs-link-fg: var(--link);
+  --breadcrumbs-bg: transparent;
+  --link-fg: var(--link);
+  --link-hover-color: var(--iz-ink);
+  --link-selected-fg: var(--iz-ink);
+  --hairline-color: var(--iz-line);
+  --border-color: var(--iz-line);
+  --error-fg: var(--iz-red);
+  --message-success-bg: var(--sev-low-bg);
+  --message-warning-bg: var(--sev-moderate-bg);
+  --message-error-bg: var(--sev-critical-bg);
+  --darkened-bg: var(--iz-card);
+  --selected-bg: var(--md-sys-color-secondary-container);
+  --selected-row: var(--md-sys-color-secondary-container);
+  --button-fg: #fff;
+  --button-bg: var(--iz-blue);
+  --button-hover-bg: var(--iz-purple);
+  --default-button-bg: var(--iz-blue);
+  --default-button-hover-bg: var(--iz-purple);
+  --close-button-bg: var(--iz-unknown);
+  --close-button-hover-bg: var(--iz-ink-2);
+  --delete-button-bg: var(--iz-red);
+  --delete-button-hover-bg: #b02a2a;
+  --object-tools-fg: #fff;
+  --object-tools-bg: var(--iz-blue);
+  --object-tools-hover-bg: var(--iz-purple);
+  --font-family-primary: "Roboto", system-ui, sans-serif;
+}
+
+body { font-family: var(--font-family-primary); background: var(--iz-bg); color: var(--iz-ink); }
+a:link, a:visited { color: var(--link); }
+a:hover { color: var(--iz-ink); }
+
+/* Header = the app's top bar */
+#header { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+  padding: 10px 16px; background: var(--iz-bg); color: var(--iz-ink); box-shadow: 0 6px 12px -8px var(--iz-shadow-dark); }
+#header #branding { flex: 0 0 auto; }
+#header #branding h1, #header #branding .brand { margin: 0; }
+.admin-nav { flex: 1 1 auto; }
+#user-tools { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0; text-transform: none; font-size: 14px; }
+#user-tools a, #user-tools button { text-decoration: none; }
+#user-tools .nav-btn { color: var(--iz-ink); }
+#logout-form { display: inline; margin: 0; }
+@media (max-width: 720px) { .admin-nav { order: 3; width: 100%; } .who { display: none; } }
+
+/* Page body */
+.breadcrumbs { background: transparent; padding: 14px 16px 0; max-width: 1180px; margin: 0 auto; font-size: 13px; color: var(--iz-ink-2); }
+.breadcrumbs a { color: var(--link); }
+#main { max-width: 1180px; margin: 0 auto; }
+#content { padding: 16px; }
+#content h1, #content h2 { font-weight: 300; color: var(--iz-ink); }
+#content h1 { font-size: clamp(28px, 5vw, 40px); letter-spacing: -.5px; }
+
+/* Cards */
+.module, #changelist .paginator, .results, #changelist-filter, .submit-row, fieldset.module, .inline-group {
+  background: var(--iz-card); border-radius: var(--iz-radius-card); }
+.module { box-shadow: var(--iz-raised); border: 0; margin-bottom: 28px; overflow: hidden; }
+.module h2, .module caption, .inline-group h2 { background: transparent; color: var(--iz-ink); font-weight: 700; font-size: 16px;
+  padding: 16px 20px 8px; text-transform: none; }
+.module h3 { color: var(--iz-ink); }
+#changelist #toolbar { background: var(--iz-card); border: 0; border-radius: var(--iz-radius-card); box-shadow: var(--iz-raised-sm); }
+#changelist-filter { box-shadow: var(--iz-raised); border: 0; }
+#changelist-filter h2 { background: transparent; color: var(--iz-ink); }
+#changelist-filter a { color: var(--iz-ink-2); }
+#changelist-filter li.selected a { color: var(--iz-blue); font-weight: 700; }
+
+/* Tables */
+table { background: transparent; color: var(--iz-ink); }
+thead th, .module th, #changelist table thead th { background: transparent; color: var(--iz-ink-2); border-bottom: 1px solid var(--iz-line);
+  font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+td, th { border-bottom: 1px solid var(--iz-line); }
+tr:nth-child(even) td, tr:nth-child(even) th, .row2 { background: transparent; }
+tbody tr:hover td, tbody tr:hover th { background: var(--md-sys-color-secondary-container); }
+.module table, .results { border-radius: var(--iz-radius-card); }
+.paginator { border: 0; background: transparent; color: var(--iz-ink-2); }
+
+/* Forms */
+form .form-row { border-bottom: 1px solid var(--iz-line); }
+input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=date], input[type=time],
+textarea, select, .vTextField, .vLargeTextField {
+  background: var(--iz-card); color: var(--iz-ink); border: 1px solid var(--iz-line); border-radius: var(--iz-radius-chip);
+  box-shadow: var(--iz-inset); padding: 8px 12px; font-family: var(--font-family-primary); }
+input:focus, textarea:focus, select:focus { outline: 3px solid var(--iz-blue); outline-offset: 2px; }
+label, .help, .help-tooltip, form .aligned p.help, .quiet { color: var(--iz-ink-2); }
+.required label, label.required { color: var(--iz-ink); }
+fieldset { border: 0; }
+
+/* Buttons: same raised/inset behaviour as .nav-btn */
+.button, input[type=submit], input[type=button], .submit-row input, a.button, .object-tools a {
+  border-radius: 14px; border: 0; font: 500 14px Roboto, system-ui, sans-serif; padding: 10px 18px; box-shadow: var(--iz-raised-sm);
+  background: var(--iz-blue); color: #fff; text-transform: none; cursor: pointer; }
+.button:hover, input[type=submit]:hover, .submit-row input:hover, .object-tools a:hover { box-shadow: var(--iz-inset); background: var(--iz-purple); }
+.submit-row { background: var(--iz-card); border: 0; box-shadow: var(--iz-raised-sm); padding: 14px 20px; }
+.submit-row a.deletelink, .button.delete-confirmation { background: var(--iz-red); color: #fff; border-radius: 14px; }
+.object-tools { margin-top: 0; }
+.object-tools a { border-radius: 14px; }
+
+/* Messages */
+ul.messagelist li { background: var(--sev-low-bg); color: var(--sev-low-ink); border-radius: var(--iz-radius-chip); border: 0; }
+ul.messagelist li.error { background: var(--sev-critical-bg); color: var(--sev-critical-ink); }
+ul.messagelist li.warning { background: var(--sev-moderate-bg); color: var(--sev-moderate-ink); }
+.errornote, .errorlist li { background: var(--sev-critical-bg); color: var(--sev-critical-ink); border-radius: var(--iz-radius-chip); border: 0; }
+
+/* Login */
+.login #container { background: var(--iz-card); border-radius: var(--iz-radius-card); box-shadow: var(--iz-raised); border: 0; margin-top: 60px; }
+.login #header { box-shadow: none; background: transparent; position: static; }
+.login #content-main .submit-row { box-shadow: none; padding: 16px 0 0; }
+
+/* Left nav sidebar on admin index/changelists */
+#nav-sidebar { background: var(--iz-card); border-right: 1px solid var(--iz-line); }
+#nav-sidebar .module th, #nav-sidebar .module td { border: 0; }
+.toggle-nav-sidebar { background: var(--iz-card); border-color: var(--iz-line); color: var(--iz-ink-2); }
+.dashboard #content { width: auto; }
+#recent-actions-module { box-shadow: var(--iz-raised); }
+#footer { display: none; }
+
+/* ---- layout fixes: header order, no list bullets, button text, dashboard width ---- */
+#header #branding { order: 1; }
+.admin-nav { order: 2; flex: 1 1 auto; margin: 0; padding: 0; }
+#user-tools { order: 3; }
+.admin-nav li, .admin-nav li::before, .admin-nav li::after { list-style: none; content: none; margin: 0; padding: 0; border: 0; }
+.admin-nav li.nav-sep { content: ""; display: block; width: 1px; height: 24px; margin: 0 6px; background: var(--iz-ink-2); opacity: .35; align-self: center; }
+#user-tools .nav-btn, #logout-form button { text-transform: none; letter-spacing: 0; font: 500 14px Roboto, system-ui, sans-serif; color: var(--iz-ink);
+  background: var(--iz-card); box-shadow: var(--iz-raised-sm); border: 0; border-radius: 14px; min-height: 40px; padding: 0 16px; display: inline-flex; align-items: center; }
+#user-tools .nav-btn:hover, #logout-form button:hover { box-shadow: var(--iz-inset); background: var(--iz-card); }
+.who { display: inline-flex; flex-direction: column; line-height: 1.2; text-align: right; font-size: 13px; margin-right: 4px; }
+.who-name { font-weight: 500; color: var(--iz-ink); } .who-role { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--iz-ink-2); }
+.dashboard #content-main, #content-main { width: auto; }
+.dashboard .module { width: 100%; }
+.dashboard #content { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+.dashboard #content > :not(#content-main):not(#content-related) { grid-column: 1 / -1; }
+.dashboard #content-main { grid-column: 1; } .dashboard #content-related { grid-column: 2; }
+.colMS { margin-right: 0; }
+#content-related { float: none; margin: 0; width: auto; }
+@media (max-width: 900px) { .dashboard #content { grid-template-columns: 1fr; } }
+.module caption { text-transform: none; }
+.module th a, .module td a { text-transform: none; }
+.dashboard #content, .colMS, .colM, .colSM { width: auto; max-width: none; }
+.dashboard #content-related { max-width: 320px; }

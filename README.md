@@ -143,9 +143,10 @@ How it stays safe:
 | `git_clone` | git | Fetch source, pin the commit (required: nothing else runs without it) | no |
 | `secrets_scan` | Gitleaks | Keys/tokens in the repo and the history that was cloned. **Values are redacted and never stored** | no |
 | `sast_python` | Bandit | Insecure Python patterns. Source lines are not kept; quoted passwords in messages are scrubbed | no, parses only |
+| `bug_checks` | built in | Likely bugs in Python source: 12 rules with codes `BC000`-`BC011` ([details](#bug-checks)). Offline | no, parses only |
 | `pip_audit` | pip-audit | Pinned requirements vs PyPI advisories (`--no-deps --disable-pip`: nothing installed) | no |
 | `npm_audit` | npm | Lockfile vs npm advisories (`--package-lock-only`, scripts off) | no |
-| `dependency_scan` | OSV.dev | Cross-check of every dependency file | no |
+| `dependency_scan` | OSV.dev (or the [local copy](#offline-mode)) | Cross-check of every dependency file by **exact version**. An unpinned package (a range like `>=5.2,<7`, or a bare name) is one `unrated` "version not pinned" finding; its advisories are never counted | no |
 
 **Install:**
 ```
@@ -158,8 +159,67 @@ set SENTINEL_TOOL_DIRS=C:\path\to\tools      # optional: extra folders to look f
 - Scanners get a minimal environment: no credentials. Only the two that call advisory services also get proxy/CA settings, and only the *names* of those variables are recorded.
 - Clone depth defaults to 1, so Gitleaks only sees the latest commit. Set `"depth": N` on the `git_clone` step to scan more history.
 
+### Bug checks
+`bug_checks` parses every `.py` file (skipping `.git`, `node_modules`, `.venv`, `venv`, `__pycache__` and files over 1 MB) and reports `file:line` with a rule code. It never imports or runs the code, needs no tools and no network. A file that doesn't parse is reported as `BC000`.
+
+| Code | Severity | Catches |
+|---|---|---|
+| `BC000` | low | File does not parse as Python 3 |
+| `BC001` | moderate | Bare `except:` (hides every error, including Ctrl+C) |
+| `BC002` | moderate | Mutable default argument (`def f(a=[])`), shared between calls |
+| `BC003` | low | `== None` / `!= None` instead of `is None` |
+| `BC004` | moderate | `assert (cond, "msg")`: a tuple is always true, so it never fails |
+| `BC005` | moderate | `is` compared to a string/number literal |
+| `BC006` | low | `except X: pass` swallows the error |
+| `BC007` | high | `eval()` / `exec()` |
+| `BC008` | moderate | `DEBUG = True` in source |
+| `BC009` | moderate | Hard-coded `SECRET_KEY`, password, token or API key (8+ characters; `<`, `$`, `{` placeholders ignored) |
+| `BC010` | low | Unreachable code after `return`/`raise`/`break`/`continue` |
+| `BC011` | moderate | Loop variable captured by a lambda (every lambda sees the last value) |
+
+Severity means "likely a real bug", not "exploitable". **Adding a rule:** add its code and `(severity, message)` to `RULES` in `pipeline/bugchecks.py`, yield `(line, code)` for it in `check_tree`, and add a case to `BugCheckTests`. Keep rules static: reading code is safe, running it is a different risk.
+
+### Local folders as targets
+A target can be a folder on this machine instead of a git URL, for code that isn't pushed or must not leave the machine.
+- **Off by default.** Set `SENTINEL_LOCAL_ROOTS` to the folder(s) that may be scanned (separate several with `;` on Windows, `:` elsewhere). A path outside them, one that uses `..` to escape, or one that doesn't exist is refused when the target is added **and** again when it runs.
+- On Windows: `set SENTINEL_LOCAL_ROOTS=C:\Users\me\code`, then add a target whose "Git URL" is `C:\Users\me\code\myapp`.
+- The folder is **copied** into the run's workspace and the original is only read. `.git`, `node_modules`, `.venv`, `venv` and `__pycache__` are left out. The copy is deleted when the run ends.
+- It scans what is on disk, **including uncommitted changes**. The run records the commit if the folder is a git repo (and notes uncommitted changes), or "not a git repo". The branch field is ignored.
+
+### Offline mode
+Runs that use no network:
+1. **Once, online:** `python manage.py update_osv` downloads the public OSV dumps for PyPI and npm and builds a local index in `SENTINEL_OSV_DIR` (default `osv-data/`, git-ignored). Options: `--eco PyPI npm`. This is the only command that needs the internet. Refresh it on a schedule.
+2. Set `SENTINEL_OFFLINE=1` and restart.
+
+What changes:
+- `dependency_scan` answers from the local index and says so: its output starts with `Offline: vulnerability data as of <date>`. A vulnerability published after that date is **not** checked.
+- `pip_audit` and `npm_audit` need the internet, so they are recorded as **skipped** (grey badge), never passed.
+- If offline mode is on but no database exists, `dependency_scan` **fails** and tells you to run `update_osv`. It never reports "clean" without data.
+- Gitleaks, Bandit and `bug_checks` are unaffected: they were already offline.
+- Matching uses OSV `versions` lists and `introduced` / `fixed` / `last_affected` ranges. Withdrawn advisories are dropped.
+
+### Security runs in the app
+Everything is done from **Security runs** (`/server/`); the admin is optional.
+- **Targets:** list, and an "Add target" form (name, git URL or local folder, branch, private). Input is validated before it is saved; each add is on the audit trail (`target.created`).
+- **Runs:** pick a target and press Run pipeline. The run page shows each step's reason, exact command, status (`passed`, `failed`, `skipped`) and a collapsible **Output** with the captured text, re-checked against its recorded hash. Failed steps are expanded.
+- **Audit trail:** `/server/audit/` (linked from the Security runs page) lists the latest 200 events and shows whether the hash chain is intact (the same check as `manage.py verify_audit`).
+- **Admin:** the Django admin uses the same header, navigation, fonts, colours and light/dark switch as the rest of the app (`templates/admin/base_site.html`, `scanner/static/scanner/admin-theme.css`). The theme choice is shared.
+
+### Temporary: open access on localhost
+**TEMPORARY, tracked in `TODO.md`.** So the pages can be tested without signing in, `SENTINEL_OPEN_ACCESS` (on by default) lets requests that come from `127.0.0.1` / `::1` use Security runs, the audit page and the admin without logging in, signed in as the first superuser. It only applies when `DJANGO_DEBUG=1`; any other address, or `DJANGO_DEBUG=0`, uses normal login and permissions. Runs started this way show the superuser's name, and the sign-in is recorded as `auth.open_access_login`. To put login back: set `SENTINEL_OPEN_ACCESS=0`, or remove the bypass (search the code for `TODO(re-enable-login)`).
+
+### Settings added
+| Variable | Default | Purpose |
+|---|---|---|
+| `SENTINEL_OFFLINE` | `0` | `1` = runs use no network (see [Offline mode](#offline-mode)) |
+| `SENTINEL_OSV_DIR` | `osv-data/` | Where `update_osv` stores the local vulnerability index |
+| `SENTINEL_LOCAL_ROOTS` | empty (off) | Folders a target may point at instead of a git URL |
+| `SENTINEL_OPEN_ACCESS` | `1` in DEBUG, else `0` | Temporary localhost bypass of login (see above) |
+
+**Windows notes:** scanner and git subprocesses get a scrubbed environment, but keep `SYSTEMROOT`, `WINDIR`, `TEMP`, `TMP`, `COMSPEC` and `PATHEXT` (none are credentials), because without them DNS lookups and Python tools fail. `USERPROFILE`, `LOCALAPPDATA` and `APPDATA` point at the run's workspace. The cloned checkout is deleted after every run, including read-only git files.
+
 ## Navigation and session state
-A top navigation bar on every page: **Scan · Results · Security runs · Admin**, with who you are, Sign out (or Sign in with GitHub) and the light/dark switch. The current page is highlighted, "Security runs" and "Admin" only appear if your role allows them, and on a phone the links wrap onto their own row.
+A top navigation bar on every page: **Scan · Results | Security runs · Admin** (a separator splits the scanner from the security-server pages), with who you are, Sign out (or Sign in with GitHub) and the light/dark switch. The current page is highlighted, "Security runs" and "Admin" only appear if your role allows them, and on a phone the links wrap onto their own row.
 
 **Flows**
 - A scan redirects to its own address, `/results/<id>/`. Refresh, Back and Forward are safe: nothing is resubmitted, and a refresh never re-runs or re-logs the scan.

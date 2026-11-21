@@ -17,10 +17,23 @@ DEFAULT_PIPELINE = [
     {"tool": "git_clone", "required": True, "reason": "Fetch the exact source to test and pin the commit"},
     {"tool": "secrets_scan", "reason": "Find API keys, tokens and passwords committed to the repo (Gitleaks)"},
     {"tool": "sast_python", "reason": "Find insecure patterns in Python code without running it (Bandit)"},
+    {"tool": "bug_checks", "reason": "Find likely bugs in Python code with built-in static rules (offline, never runs the code)"},
     {"tool": "pip_audit", "reason": "Check pinned Python dependencies for known vulnerabilities (pip-audit, PyPI advisories)"},
     {"tool": "npm_audit", "reason": "Check npm lockfile dependencies for known vulnerabilities (npm audit, lockfile only)"},
     {"tool": "dependency_scan", "reason": "Cross-check every dependency file on OSV.dev"},
 ]
+
+
+def _remove_checkout(path):
+    """Delete the cloned source. git marks object files read-only, which Windows refuses to delete,
+    so clear the flag and retry rather than silently leaving the scanned code on disk."""
+    import os
+    import stat
+
+    def _retry(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    shutil.rmtree(path, onerror=_retry) if os.path.exists(path) else None
 
 
 def create_run(target, requested_by="", pipeline=None) -> Run:
@@ -58,7 +71,7 @@ def execute(run: Run) -> Run:
             err = store_evidence(res.stderr, label=f"{spec['tool']} stderr")
             step.argv, step.exit_code, step.summary = res.argv, res.exit_code, res.summary
             step.stdout_sha256, step.stderr_sha256 = out.sha256, err.sha256
-            step.status = "passed" if res.ok else "failed"
+            step.status = "skipped" if res.ok and res.summary.get("skipped") else ("passed" if res.ok else "failed")
             step.finished_at = timezone.now()
             step.save()
             for f in res.findings:
@@ -78,7 +91,7 @@ def execute(run: Run) -> Run:
                 if spec.get("required"):      # no source means nothing later can run
                     break
     finally:
-        shutil.rmtree(workdir, ignore_errors=True)   # evidence is kept; the checkout is not
+        _remove_checkout(workdir)   # evidence is kept; the checkout is not
     run.status = "failed" if failed else "passed"
     run.finished_at = timezone.now(); run.save(update_fields=["status", "finished_at"])
     record("run.finished", actor="system", obj=run,

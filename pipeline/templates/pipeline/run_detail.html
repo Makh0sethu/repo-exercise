@@ -24,9 +24,11 @@
 <section class="packages">
   <h2 class="iz-title">Steps</h2>
   {% for s in steps %}
-  <div class="iz-card mini strip-{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">
-    <div class="mini-text"><b>{{ s.order }}. {{ s.tool }}</b><span class="muted small">{{ s.reason }}</span><code>{{ s.argv|join:" " }}</code></div>
-    <span class="badge badge--{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">{{ s.status }}</span>
+  <div class="iz-card mini strip-{% if s.status == 'passed' %}clean{% elif s.status == 'skipped' %}unknown{% else %}critical{% endif %}">
+    <div class="mini-text"><b>{{ s.order }}. {{ s.tool }}</b><span class="muted small">{{ s.reason }}</span><code>{{ s.argv|join:" " }}</code>
+      {% if s.stderr_text or s.stdout_text %}<details{% if s.status != 'passed' %} open{% endif %}><summary class="small">Output (exit {{ s.exit_code }})</summary>
+        {% if s.stderr_text %}<pre class="small">{{ s.stderr_text }}</pre>{% endif %}{% if s.stdout_text %}<pre class="small">{{ s.stdout_text }}</pre>{% endif %}</details>{% endif %}</div>
+    <span class="badge badge--{% if s.status == 'passed' %}clean{% elif s.status == 'skipped' %}unknown{% else %}critical{% endif %}">{{ s.status }}</span>
   </div>
   {% empty %}<p class="muted">No steps yet.</p>{% endfor %}
 </section>

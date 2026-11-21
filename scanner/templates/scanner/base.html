@@ -22,7 +22,8 @@
     </a>
     <ul class="nav-links">
       {% for item in nav_items %}
-      <li><a href="{{ item.url }}" class="nav-link{% if item.active %} is-active{% endif %}"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}{% if item.count %}<span class="nav-count" aria-label="{{ item.count }} saved">{{ item.count }}</span>{% endif %}</a></li>
+      {% if item.separator %}<li class="nav-sep" role="separator" aria-orientation="vertical"></li>{% else %}
+      <li><a href="{{ item.url }}" class="nav-link{% if item.active %} is-active{% endif %}"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}{% if item.count %}<span class="nav-count" aria-label="{{ item.count }} saved">{{ item.count }}</span>{% endif %}</a></li>{% endif %}
       {% endfor %}
     </ul>
     <div class="nav-right">

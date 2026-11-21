@@ -5,7 +5,7 @@ from django.db import models
 class Target(models.Model):
     """An app under test. v1 supports git repositories; images come later."""
     name = models.CharField(max_length=100, unique=True)
-    git_url = models.URLField(max_length=300)
+    git_url = models.CharField(max_length=300, help_text="https git URL, or a local folder path inside SENTINEL_LOCAL_ROOTS")
     ref = models.CharField(max_length=100, default="HEAD", help_text="Branch or tag. HEAD = default branch.")
     private = models.BooleanField(default=False, help_text="Needs GitHub credentials to clone.")
     created_by = models.CharField(max_length=150, blank=True)

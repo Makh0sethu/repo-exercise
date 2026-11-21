@@ -3,6 +3,7 @@ from django.urls import reverse
 
 from accounts.identity import actor_name
 from accounts.roles import role_for
+from pipeline.access import has_perm, open_access
 
 
 def _active(path, url, exact=False):
@@ -18,8 +19,12 @@ def sentinel(request):
         {"label": "Results", "url": reverse("scanner:results"), "active": _active(path, "/results/"),
          "count": len(request.session.get("scan_history", [])) if hasattr(request, "session") else 0},
     ]
-    if signed_in and user.has_perm("pipeline.view_run"):
-        items.append({"label": "Security runs", "url": reverse("pipeline:runs"), "active": _active(path, "/server/")})
+    pen = []
+    if (signed_in or open_access(request)) and has_perm(request, "pipeline.view_run"):
+        pen.append({"label": "Security runs", "url": reverse("pipeline:runs"), "active": _active(path, "/server/")})
+    if pen:
+        items.append({"separator": True})
+        items.extend(pen)
     if signed_in and (user.is_superuser or user.has_perm("audit.view_auditevent") or user.has_perm("scanner.view_scanlog")):
         items.append({"label": "Admin", "url": reverse("admin:index"), "active": _active(path, "/" + settings.SENTINEL_ADMIN_PATH)})
     role = None

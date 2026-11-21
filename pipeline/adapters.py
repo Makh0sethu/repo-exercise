@@ -16,7 +16,8 @@ from scanner.parsers import parse_inputs
 from scanner import scan as scanner_scan
 from scanner.sources import query_osv
 
-from .gitsafe import check_git_url, check_ref
+from . import bugchecks, osvlocal
+from .gitsafe import check_git_url, check_ref, is_local_target
 
 
 @dataclass
@@ -42,11 +43,36 @@ def _redact(text: str, secrets) -> str:
     return text
 
 
+# Windows needs these for DNS/networking and temp files; none of them is a credential.
+WINDOWS_SYSTEM_ENV = ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC", "PATHEXT")
+
+
+def _system_env():
+    return {k: os.environ[k] for k in WINDOWS_SYSTEM_ENV if os.name == "nt" and os.environ.get(k)}
+
+
+def _local_copy(path, dest, ctx) -> AdapterResult:
+    """Copy a local folder into the workspace (uncommitted changes included; .git and dependency folders left out).
+    The original is only read, never modified. Records the commit when the folder is a git repo."""
+    argv = ["copy", path, str(dest)]
+    shutil.copytree(path, dest, symlinks=True, ignore=shutil.ignore_patterns(*SKIP_DIRS))
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(ctx["workspace"]), "GIT_CONFIG_NOSYSTEM": "1", **_system_env()}
+    sha = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], capture_output=True, text=True, env=env)
+    dirty = subprocess.run(["git", "-C", path, "status", "--porcelain"], capture_output=True, text=True, env=env).stdout.strip()
+    commit = sha.stdout.strip() if sha.returncode == 0 else ""
+    note = f"Scanned local folder {path}" + (f" at commit {commit[:10]}" if commit else " (not a git repo)") \
+        + (" with uncommitted changes" if dirty else "")
+    return AdapterResult(argv, 0, note, "", summary={"commit": commit, "local": True, "uncommitted": bool(dirty)},
+                         values={"commit_sha": commit, "src": str(dest)})
+
+
 def git_clone(spec, ctx) -> AdapterResult:
     """Shallow-clone the target into the workspace and record the exact commit."""
     target = ctx["target"]
     url, ref = check_git_url(target.git_url), check_ref(target.ref)
     dest = ctx["workspace"] / "src"
+    if is_local_target(target.git_url):
+        return _local_copy(url, dest, ctx)
     depth = int(spec.get("depth", 1))
     if not 1 <= depth <= 1000:
         raise UnsafeTarget("clone depth must be 1..1000")
@@ -56,7 +82,7 @@ def git_clone(spec, ctx) -> AdapterResult:
     argv += ["--", url, str(dest)]
 
     env = {"PATH": os.environ.get("PATH", ""), "HOME": str(ctx["workspace"]),
-           "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1"}
+           "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", **_system_env()}
     secrets = []
     token = os.environ.get("SENTINEL_GITHUB_TOKEN", "") if target.private else ""
     if token:
@@ -90,15 +116,39 @@ def dependency_scan(spec, ctx) -> AdapterResult:
         if path.name in DEP_FILES and not (set(path.relative_to(src).parts) & SKIP_DIRS) and path.stat().st_size <= 1_000_000:
             uploads.append((str(path.relative_to(src)), path.read_text(errors="replace")))
     parsed = parse_inputs(uploads)
-    argv = ["sentinel.scanner.query_osv", f"files={len(uploads)}", f"packages={len(parsed.packages)}"]
+    offline = getattr(settings, "SENTINEL_OFFLINE", False)
+    argv = ["sentinel.osvlocal.query" if offline else "sentinel.scanner.query_osv", f"files={len(uploads)}", f"packages={len(parsed.packages)}"]
     if not parsed.packages:
         return AdapterResult(argv, 0, "No dependency files found", summary={"files": len(uploads), "packages": 0})
+    data_as_of = ""
+    if offline:
+        m = osvlocal.meta()
+        if not m:
+            return AdapterResult(argv, 2, "", "Offline mode is on but there is no local vulnerability database. "
+                                 "Run: manage.py update_osv (needs internet once)", summary={"error": "no offline database"})
+        data_as_of = m["updated_at"]
     try:
-        vulns = query_osv(parsed.packages, fetcher=lambda *a, **k: scanner_scan._get_json(*a, **k))
+        if offline:
+            vulns = osvlocal.query(parsed.packages)
+        else:
+            vulns = query_osv(parsed.packages, fetcher=lambda *a, **k: scanner_scan._get_json(*a, **k))
     except Exception as exc:
         return AdapterResult(argv, 2, "", f"OSV.dev lookup failed: {exc!r}", summary={"error": "osv unreachable"})
     findings, lines = [], []
     for p in parsed.packages:
+        if p.version is None:
+            # No exact version (a range like >=5.2,<7, or a bare name): OSV can only answer by name, which
+            # lists every advisory ever filed. Those can't be matched to what actually runs, so they are NOT
+            # reported as vulnerabilities. One "version unknown" finding says what to do instead.
+            n = len(vulns.get((p.key, None), []))
+            where = f"{p.name}@{p.spec or '*'}"
+            findings.append({"severity": "unrated", "title": f"{p.name}: version not pinned, cannot be checked",
+                             "location": where,
+                             "detail": {"ecosystem": p.ecosystem, "spec": p.spec, "advisories_by_name": n,
+                                        "how_to_fix": "Commit a lockfile or pin an exact version (e.g. pip freeze, package-lock.json) so the exact version can be checked.",
+                                        "files": [f for f, _ in uploads]}})
+            lines.append(f"UNPINNED  {where}  not checked by version ({n} advisories exist for the name; none counted)")
+            continue
         for v in vulns.get((p.key, p.version), []):
             sev = "moderate" if v["severity"] == "MODERATE" else v["severity"].lower()
             where = f"{p.name}@{p.version or p.spec or '*'}"
@@ -106,8 +156,9 @@ def dependency_scan(spec, ctx) -> AdapterResult:
                              "detail": {"ecosystem": p.ecosystem, "fixed": v["fixed"], "url": v["url"],
                                         "aliases": v["aliases"], "files": [f for f, _ in uploads]}})
             lines.append(f"{sev.upper():9} {where}  {v['id']}  fix: {', '.join(v['fixed']) or 'none listed'}")
-    return AdapterResult(argv, 0, "\n".join(lines) or "No known vulnerabilities",
-                         findings=findings, summary={"files": len(uploads), "packages": len(parsed.packages), "findings": len(findings)})
+    header = [f"Offline: vulnerability data as of {data_as_of}. A vulnerability published after this date is NOT checked."] if offline else []
+    return AdapterResult(argv, 0, "\n".join(header + lines) or "No known vulnerabilities",
+                         findings=findings, summary={"files": len(uploads), "packages": len(parsed.packages), "offline": offline, "data_as_of": data_as_of, "unpinned": sum(1 for p in parsed.packages if p.version is None), "findings": len(findings)})
 
 
 
@@ -150,7 +201,9 @@ NETWORK_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_pro
 def _scrub_env(ctx, network=False, **extra):
     """Scanners get a minimal environment: no credentials, nothing inherited but PATH.
     network=True also forwards proxy/CA settings; their names are kept in ctx for the audit record."""
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(ctx["workspace"]), "NO_COLOR": "1"}
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(ctx["workspace"]), "NO_COLOR": "1", **_system_env()}
+    if os.name == "nt":  # tools that look for a home/cache dir (pip-audit) use these on Windows; keep them in the workspace
+        env.update(USERPROFILE=str(ctx["workspace"]), LOCALAPPDATA=str(ctx["workspace"]), APPDATA=str(ctx["workspace"]))
     if network:
         passed = [k for k in NETWORK_ENV if os.environ.get(k)]
         env.update({k: os.environ[k] for k in passed})
@@ -233,6 +286,8 @@ def _find(src, pattern):
 
 def pip_audit(spec, ctx) -> AdapterResult:
     """pip-audit on pinned requirements files. --no-deps --disable-pip means nothing is installed or executed."""
+    if getattr(settings, "SENTINEL_OFFLINE", False):
+        return _offline_skip("pip-audit")
     try:
         binary = find_tool("pip-audit")
     except ToolMissing as exc:
@@ -273,6 +328,8 @@ NPM_SEV = {"critical": "critical", "high": "high", "moderate": "moderate", "low"
 
 def npm_audit(spec, ctx) -> AdapterResult:
     """npm audit against package-lock.json only. Nothing is installed and no scripts run."""
+    if getattr(settings, "SENTINEL_OFFLINE", False):
+        return _offline_skip("npm audit")
     try:
         binary = find_tool("npm")
     except ToolMissing as exc:
@@ -313,5 +370,29 @@ def npm_audit(spec, ctx) -> AdapterResult:
                          findings=findings, summary=summary)
 
 
-ADAPTERS = {"git_clone": git_clone, "dependency_scan": dependency_scan, "secrets_scan": secrets_scan,
+def bug_checks(spec, ctx) -> AdapterResult:
+    """Built-in static bug checks over Python source (see pipeline/bugchecks.py). Offline, reads only."""
+    src = Path(ctx["values"]["src"])
+    argv = ["sentinel.bugchecks", f"rules={len(bugchecks.RULES)}"]
+    findings, lines, files = [], [], 0
+    for path in sorted(src.rglob("*.py")):
+        rel = path.relative_to(src)
+        if set(rel.parts) & SKIP_DIRS or path.stat().st_size > 1_000_000:
+            continue
+        files += 1
+        for line, code in bugchecks.check_source(path.read_text(errors="replace"), str(rel)):
+            sev, msg = bugchecks.RULES[code]
+            where = f"{rel.as_posix()}:{line}"
+            findings.append({"severity": sev, "title": f"{code}: {msg}", "location": where, "detail": {"rule": code}})
+            lines.append(f"{sev.upper():9} {where}  {code}  {msg}")
+    return AdapterResult(argv, 0, "\n".join(lines) or f"No issues found in {files} Python files",
+                         findings=findings, summary={"files": files, "findings": len(findings)})
+
+
+def _offline_skip(tool):
+    return AdapterResult([tool], 0, f"Skipped: {tool} needs the internet and offline mode is on.", "",
+                         summary={"skipped": "offline"})
+
+
+ADAPTERS = {"bug_checks": bug_checks, "git_clone": git_clone, "dependency_scan": dependency_scan, "secrets_scan": secrets_scan,
             "sast_python": sast_python, "pip_audit": pip_audit, "npm_audit": npm_audit}

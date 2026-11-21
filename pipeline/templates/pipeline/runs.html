@@ -6,9 +6,28 @@
   <div>
     <h1 class="iz-title display">Security <b>Runs</b></h1>
     {% include "scanner/_title.html" %}
-    <p class="muted">Signed in as {{ who }}. Everything here is on the audit trail.</p>
+    <p class="muted">Signed in as {{ who }}. Everything here is on the <a href="{% url 'pipeline:audit' %}">audit trail</a>.</p>
   </div>
 </header>
+
+{% if messages %}<div class="iz-card panel" role="status">{% for m in messages %}<p class="{% if m.tags == 'error' %}muted{% endif %}"><b>{{ m }}</b></p>{% endfor %}</div>{% endif %}
+
+<section class="iz-card panel" id="targets">
+  <h2 class="iz-title"><b>Targets</b></h2>
+  {% for t in targets %}
+  <p class="small"><b>{{ t.name }}</b> · <code>{{ t.git_url }}</code> · {{ t.ref }}{% if t.private %} · private{% endif %}</p>
+  {% empty %}<p class="muted">No targets yet. Add one below.</p>{% endfor %}
+  {% if can_add_target %}
+  <form method="post" action="{% url 'pipeline:add_target' %}" class="actions" data-keep-state>{% csrf_token %}
+    <input class="select" name="name" placeholder="Name" aria-label="Name" required maxlength="100">
+    <input class="select" name="git_url" type="text" placeholder="Git URL or local folder path" aria-label="Git URL" required maxlength="300">
+    <input class="select" name="ref" placeholder="Branch (default HEAD)" aria-label="Branch" maxlength="100">
+    <label class="small"><input type="checkbox" name="private"> Private</label>
+    <md-filled-button type="submit">Add target</md-filled-button>
+  </form>
+  <p class="muted small">Only https git URLs on allowed hosts, or folders inside <code>SENTINEL_LOCAL_ROOTS</code>, are accepted. Private repos also need <code>SENTINEL_GITHUB_TOKEN</code>.</p>
+  {% endif %}
+</section>
 
 {% if can_run %}
 <form method="post" action="{% url 'pipeline:start' %}" class="iz-card panel" data-keep-state>{% csrf_token %}
@@ -21,6 +40,7 @@
     <md-filled-button type="submit">Run pipeline</md-filled-button>
   </div>
   {% else %}<p class="muted">No targets yet. An admin adds them in the admin area.</p>{% endif %}
+
 </form>
 {% endif %}
 
@@ -40,7 +60,7 @@
     <div class="problems">
       {% for s in run.steps.all %}
       <article class="problem">
-        <div class="problem-head"><span class="badge badge--{% if s.status == 'passed' %}clean{% else %}critical{% endif %}">{{ s.status }}</span> {{ s.tool }}</div>
+        <div class="problem-head"><span class="badge badge--{% if s.status == 'passed' %}clean{% elif s.status == 'skipped' %}unknown{% else %}critical{% endif %}">{{ s.status }}</span> {{ s.tool }}</div>
         <p><b>Why:</b> {{ s.reason }}</p>
         <p class="muted small">exit {{ s.exit_code }} · {{ s.findings.count }} findings</p>
       </article>

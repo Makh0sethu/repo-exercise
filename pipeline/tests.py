@@ -76,19 +76,28 @@ class PipelineTests(TestCase):
         run = self.run_it()
         self.assertEqual(run.status, "passed")
         self.assertEqual(len(run.commit_sha), 40)
-        f = Finding.objects.get()
-        self.assertEqual((f.severity, f.location), ("high", "lodash@4.17.15"))
+        f = Finding.objects.get(severity="high")
+        self.assertEqual(f.location, "lodash@4.17.15")
         self.assertIn("4.17.21", f.detail["fixed"])
+
+    def test_unpinned_packages_are_flagged_not_scored(self):
+        """A bare name or version range can't be matched to advisories, so it is one 'unrated'
+        finding saying so, never a list of vulnerabilities."""
+        self.run_it()
+        u = Finding.objects.get(severity="unrated")
+        self.assertEqual(u.location, "requests@*")
+        self.assertIn("version not pinned", u.title)
+        self.assertEqual(Finding.objects.filter(severity="high").count(), 1)   # only the pinned lodash
 
     def test_node_modules_are_not_scanned(self):
         self.run_it()
-        self.assertNotIn("ignored", read_evidence(EvidenceArtifact.objects.get(sha256=Finding.objects.get().evidence_sha256)).decode())
+        self.assertNotIn("ignored", read_evidence(EvidenceArtifact.objects.get(sha256=Finding.objects.get(severity="high").evidence_sha256)).decode())
 
     def test_every_step_is_on_the_audit_chain_with_its_reason(self):
         run = self.run_it()
         actions = list(AuditEvent.objects.values_list("action", flat=True))
         self.assertEqual(actions, ["run.created", "step.started", "step.finished", "step.started",
-                                   "finding.recorded", "step.finished", "run.finished"])
+                                   "finding.recorded", "finding.recorded", "step.finished", "run.finished"])
         started = AuditEvent.objects.filter(action="step.started").first()
         self.assertIn("pin the commit", started.payload["reason"])
         clone = AuditEvent.objects.filter(action="step.finished").first()
@@ -310,7 +319,7 @@ class PipelineFlowTests(TestCase):
     def test_default_pipeline_lists_every_scanner_with_a_reason(self):
         from .runner import DEFAULT_PIPELINE
         self.assertEqual([s["tool"] for s in DEFAULT_PIPELINE],
-                         ["git_clone", "secrets_scan", "sast_python", "pip_audit", "npm_audit", "dependency_scan"])
+                         ["git_clone", "secrets_scan", "sast_python", "bug_checks", "pip_audit", "npm_audit", "dependency_scan"])
         self.assertTrue(all(s["reason"] for s in DEFAULT_PIPELINE))
 
 
@@ -326,4 +335,134 @@ class EnvIsolationTests(TestCase):
         self.assertEqual(net["HTTPS_PROXY"], "http://proxy:3128")
         for secret in ("SENTINEL_GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "DJANGO_SECRET_KEY"):
             self.assertNotIn(secret, offline); self.assertNotIn(secret, net)
-        self.assertEqual(ctx["network_env_passed"], ["HTTPS_PROXY", "SSL_CERT_FILE"])      # names only, never values
+        # names only, never values; Windows env names are case-insensitive so https_proxy is the same variable
+        self.assertEqual(sorted({n.upper() for n in ctx["network_env_passed"]}), ["HTTPS_PROXY", "SSL_CERT_FILE"])
+
+
+# ------------------------------------------------------------------ bug checks, local targets, offline mode
+import json
+import zipfile
+
+from pipeline import bugchecks, osvlocal
+from pipeline.adapters import ADAPTERS
+
+
+class BugCheckTests(TestCase):
+    def codes(self, src):
+        return [c for _, c in bugchecks.check_source(src)]
+
+    def test_each_rule_fires_on_the_bug_it_names(self):
+        cases = {
+            "BC001": "try:\n    pass\nexcept:\n    x = 1\n",
+            "BC002": "def f(a=[]):\n    return a\n",
+            "BC003": "x = 1\nif x == None:\n    pass\n",
+            "BC004": "assert (1, 'always true')\n",
+            "BC005": "x = 'a'\nif x is 'a':\n    pass\n",
+            "BC006": "try:\n    x = 1\nexcept ValueError:\n    pass\n",
+            "BC007": "eval('1+1')\n",
+            "BC008": "DEBUG = True\n",
+            "BC009": "SECRET_KEY = 'a-long-hardcoded-value'\n",
+            "BC010": "def f():\n    return 1\n    x = 2\n",
+            "BC011": "fs = []\nfor i in range(3):\n    fs.append(lambda: i)\n",
+            "BC000": "def broken(:\n",
+        }
+        for code, src in cases.items():
+            self.assertIn(code, self.codes(src), msg=code)
+
+    def test_clean_code_has_no_findings(self):
+        self.assertEqual(self.codes("def f(a=None):\n    if a is None:\n        return 1\n    return 2\n"), [])
+
+    def test_pipeline_step_reports_file_and_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "m.py").write_text("def f(a=[]):\n    return a\n")
+            res = ADAPTERS["bug_checks"]({}, {"values": {"src": d}})
+        self.assertEqual((res.findings[0]["location"], res.findings[0]["detail"]["rule"]), ("m.py:1", "BC002"))
+
+
+class LocalTargetTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+
+    def test_refused_unless_a_root_is_configured(self):
+        with override_settings(PIPELINE_LOCAL_ROOTS=[]), self.assertRaises(UnsafeTarget):
+            check_git_url(str(self.root))
+
+    def test_inside_root_ok_outside_and_escapes_refused(self):
+        (self.root / "app").mkdir()
+        with override_settings(PIPELINE_LOCAL_ROOTS=[str(self.root)]):
+            self.assertEqual(check_git_url(str(self.root / "app")), str(self.root / "app"))
+            with self.assertRaises(UnsafeTarget):
+                check_git_url(str(self.root / "app" / ".." / ".."))
+            with self.assertRaises(UnsafeTarget):
+                check_git_url(str(self.root / "missing"))
+
+    def test_local_folder_is_scanned_offline_and_not_modified(self):
+        (self.root / "proj").mkdir()
+        (self.root / "proj" / "m.py").write_text("def f(a=[]):\n    return a\n")
+        (self.root / "proj" / "node_modules").mkdir()
+        (self.root / "proj" / "node_modules" / "x.py").write_text("eval('1')\n")
+        target = Target.objects.create(name="local", git_url=str(self.root / "proj"))
+        pl = [{"tool": "git_clone", "required": True, "reason": "copy"}, {"tool": "bug_checks", "reason": "bugs"}]
+        with override_settings(PIPELINE_LOCAL_ROOTS=[str(self.root)], PIPELINE_WORKDIR=self.tmp.name, AUDIT_EVIDENCE_DIR=self.tmp.name + "/ev"):
+            run = execute(create_run(target, pipeline=pl))
+        self.assertEqual(run.status, "passed")
+        self.assertEqual([f.location for f in run.findings.all()], ["m.py:1"])          # node_modules ignored
+        self.assertTrue((self.root / "proj" / "node_modules" / "x.py").exists())          # original untouched
+        self.assertFalse((self.root / f"sentinel-run-{run.pk}").exists())
+
+
+def _osv_zip(path):
+    adv = {"id": "GHSA-lodash", "summary": "Command injection", "database_specific": {"severity": "HIGH"},
+           "affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                         "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}]}
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("GHSA-lodash.json", json.dumps(adv))
+        z.writestr("GHSA-withdrawn.json", json.dumps({**adv, "id": "GHSA-withdrawn", "withdrawn": "2020-01-01T00:00:00Z"}))
+
+
+class OfflineTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.o = override_settings(SENTINEL_OSV_DIR=Path(self.tmp.name) / "osv", SENTINEL_OFFLINE=True)
+        self.o.enable(); self.addCleanup(self.o.disable)
+        (Path(self.tmp.name) / "osv").mkdir()
+        _osv_zip(Path(self.tmp.name) / "osv" / "npm.zip")
+        self.n = osvlocal.build_index("npm", Path(self.tmp.name) / "osv" / "npm.zip")
+        (Path(self.tmp.name) / "osv" / "meta.json").write_text(json.dumps({"updated_at": "2026-11-01T00:00:00+00:00", "counts": {"npm": self.n}}))
+
+    def pkg(self, version):
+        from scanner.parsers import Package
+        return Package("npm", "lodash", version, version or "", "package.json")
+
+    def test_withdrawn_advisories_are_dropped(self):
+        self.assertEqual(self.n, 1)
+
+    def test_exact_version_matched_by_range(self):
+        hit = list(osvlocal.query([self.pkg("4.17.15")]).values())[0]
+        miss = list(osvlocal.query([self.pkg("4.17.21")]).values())[0]
+        self.assertEqual([h["id"] for h in hit], ["GHSA-lodash"])
+        self.assertEqual(miss, [])
+
+    def test_dependency_scan_offline_makes_no_network_call_and_states_data_date(self):
+        src = Path(self.tmp.name) / "src"; src.mkdir()
+        (src / "package.json").write_text('{"dependencies": {"lodash": "4.17.15"}}')
+        with mock.patch("scanner.scan._get_json", side_effect=AssertionError("network used")), \
+             mock.patch("pipeline.adapters.query_osv", side_effect=AssertionError("network used")):
+            res = ADAPTERS["dependency_scan"]({}, {"values": {"src": str(src)}})
+        self.assertEqual(res.exit_code, 0)
+        self.assertIn("as of 2026-11-01", res.stdout)
+        self.assertEqual([f["severity"] for f in res.findings], ["high"])
+
+    def test_no_database_fails_loudly_instead_of_reporting_clean(self):
+        with override_settings(SENTINEL_OSV_DIR=Path(self.tmp.name) / "empty"):
+            src = Path(self.tmp.name) / "src2"; src.mkdir()
+            (src / "package.json").write_text('{"dependencies": {"lodash": "4.17.15"}}')
+            res = ADAPTERS["dependency_scan"]({}, {"values": {"src": str(src)}})
+        self.assertNotEqual(res.exit_code, 0)
+        self.assertIn("update_osv", res.stderr)
+
+    def test_network_steps_are_recorded_as_skipped_not_passed(self):
+        for tool in ("pip_audit", "npm_audit"):
+            res = ADAPTERS[tool]({}, {"values": {"src": self.tmp.name}, "workspace": Path(self.tmp.name)})
+            self.assertEqual(res.summary, {"skipped": "offline"})

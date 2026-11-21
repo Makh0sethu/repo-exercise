@@ -1,0 +1,24 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: audit trail{% endblock %}
+{% block crumbs %}<nav class="crumbs no-print" aria-label="Breadcrumb"><a href="{% url 'pipeline:runs' %}">Security runs</a><span aria-hidden="true">›</span><span aria-current="page">Audit trail</span><a class="back" href="{% url 'pipeline:runs' %}" data-back>← All runs</a></nav>{% endblock %}
+{% block content %}
+<header class="hero hero--results">
+  <div>
+    <h1 class="iz-title display">Audit <b>trail</b></h1>
+    <p class="muted">Signed in as {{ who }}. Showing the latest {{ events|length }} of {{ total }} events.</p>
+  </div>
+</header>
+<section class="iz-card panel" role="status">
+  {% if intact %}<p><span class="badge badge--clean">intact</span> Hash chain verified: {{ total }} events, none altered or removed.</p>
+  {% else %}<p><span class="badge badge--critical">broken</span> The audit chain has been tampered with.</p>
+  {% for seq, reason in errors %}<p class="small">event #{{ seq }}: {{ reason }}</p>{% endfor %}{% endif %}
+</section>
+<section class="iz-card panel">
+  <div style="overflow-x:auto"><table class="small" style="width:100%;text-align:left">
+    <thead><tr><th>#</th><th>When</th><th>Who</th><th>Action</th><th>Object</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for e in events %}<tr><td>{{ e.seq }}</td><td>{{ e.at|date:"d M Y H:i:s" }}</td><td>{{ e.actor }}</td><td><code>{{ e.action }}</code></td><td>{{ e.object_type }} {{ e.object_id }}</td><td><code>{{ e.payload }}</code></td></tr>
+    {% empty %}<tr><td colspan="6" class="muted">No events yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+{% endblock %}

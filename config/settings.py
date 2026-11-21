@@ -41,6 +41,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "pipeline.access.OpenAccessLoginMiddleware",   # TODO(re-enable-login): local-dev bypass, see TODO.md
     "accounts.middleware.GitHubAllowlistMiddleware",   # revokes access the moment someone is removed
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -53,7 +54,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
-    "DIRS": [],
+    "DIRS": [BASE_DIR / "templates"],   # admin skin lives here: templates/admin/base_site.html
     "APP_DIRS": True,
     "OPTIONS": {"context_processors": [
         "django.template.context_processors.request",
@@ -116,6 +117,18 @@ SENTINEL_GITHUB_CLIENT_SECRET = os.environ.get("SENTINEL_GITHUB_CLIENT_SECRET", 
 # Who may sign in, and as what: "alice:admin,bob:operator,carol:auditor". Empty = nobody.
 SENTINEL_GITHUB_USERS = os.environ.get("SENTINEL_GITHUB_USERS", "")
 # Where scanner binaries live, in addition to PATH (path-separator list).
+# TODO(re-enable-login): TEMPORARY. While on, the Security runs pages need no sign-in, but ONLY with
+# DEBUG on and a loopback request (see pipeline/access.py). To put the admin login back, set
+# SENTINEL_OPEN_ACCESS=0 (or delete this block, pipeline/access.py and its uses in pipeline/views.py
+# and scanner/context_processors.py). Tracked in TODO.md.
+SENTINEL_OPEN_ACCESS = DEBUG and os.environ.get("SENTINEL_OPEN_ACCESS", "1") == "1"
+# Offline mode: no network calls from a run. Vulnerability data comes from the local OSV copy built by
+# `manage.py update_osv`; steps that need the internet (pip-audit, npm audit) are recorded as skipped.
+SENTINEL_OFFLINE = os.environ.get("SENTINEL_OFFLINE", "0") == "1"
+SENTINEL_OSV_DIR = Path(os.environ.get("SENTINEL_OSV_DIR", BASE_DIR / "osv-data"))
+# Folders a target may point at instead of a git URL (separate paths with ';' on Windows, ':' elsewhere).
+# Empty = local-path targets are refused.
+PIPELINE_LOCAL_ROOTS = [d for d in os.environ.get("SENTINEL_LOCAL_ROOTS", "").split(os.pathsep) if d]
 PIPELINE_TOOL_DIRS = [d for d in os.environ.get("SENTINEL_TOOL_DIRS", "").split(os.pathsep) if d]
 AUDIT_EVIDENCE_DIR = Path(os.environ.get("SENTINEL_EVIDENCE_DIR", BASE_DIR / "evidence"))
 LOG_DIR = Path(os.environ.get("SENTINEL_LOG_DIR", BASE_DIR / "logs"))
