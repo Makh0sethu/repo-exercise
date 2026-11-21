@@ -11,12 +11,13 @@ import http.client
 import json
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Callable, TypeVar
 
-from django.core.cache import cache
+from . import store
 
 T = TypeVar("T")
 
@@ -29,6 +30,13 @@ DEFAULT_HEADERS = {
 TTL_VULN = 60 * 60 * 24       # 24 hours for OSV, CVE.org, NVD records
 TTL_CATALOG = 60 * 60 * 24    # 24 hours for CISA KEV & RetireJS definitions
 TTL_NEWS = 60 * 60            # 1 hour for RSS feeds & Hacker News
+
+# How long an expired copy may still be shown when the live source is slow or down.
+# Better an old answer that says how old it is than no answer.
+STALE_LIMIT = 60 * 60 * 24 * 30      # advisories and catalogs: 30 days
+STALE_LIMIT_NEWS = 60 * 60 * 24 * 7  # news goes out of date sooner: 7 days
+FAIL_BACKOFF = 60                    # after a failure, don't retry that item for a minute
+LIMITED_BACKOFF = 60 * 10            # after "too many requests", leave that item alone for 10 minutes
 
 _TLS = threading.local()
 _SSL_CTX = ssl.create_default_context()
@@ -152,13 +160,102 @@ def _cache_key(prefix: str, identifier: str) -> str:
     return f"sentinel:{prefix}:{digest}"
 
 
-def cached_fetch(prefix: str, identifier: str, ttl: int, fetcher: Callable[[], T]) -> T:
-    """Return cached value for (prefix, identifier), or call fetcher and cache it."""
+class RecentFailure(Exception):
+    """A fetch failed moments ago and nothing is saved, so we don't make everyone wait again."""
+
+
+class RateLimited(Exception):
+    """Our own request budget for a source is used up for now."""
+
+
+# Which cached lookups were answered from an expired copy, so a scan can say so on the page.
+_STALE_LOCK = threading.Lock()
+_STALE_LOG: list[tuple[float, str, float]] = []
+
+
+def note_stale(prefix: str, age_seconds: float) -> None:
+    with _STALE_LOCK:
+        _STALE_LOG.append((time.time(), prefix, age_seconds))
+        del _STALE_LOG[:-500]
+
+
+def stale_since(started: float) -> dict[str, float]:
+    """{cache prefix: age in seconds of the oldest copy shown} for lookups since `started`."""
+    out: dict[str, float] = {}
+    with _STALE_LOCK:
+        for at, prefix, age in _STALE_LOG:
+            if at >= started:
+                out[prefix] = max(out.get(prefix, 0.0), age)
+    return out
+
+
+def clear_cache() -> None:
+    """Forget every saved copy and the in-memory counters (e.g. the per-IP rate limit)."""
+    from django.core.cache import cache
+
+    cache.clear()
+    store.clear()
+    with _STALE_LOCK:
+        _STALE_LOG.clear()
+
+
+def _backoff_for(exc: Exception) -> int:
+    code = getattr(exc, "status_code", None)
+    return LIMITED_BACKOFF if code in (403, 429) or isinstance(exc, RateLimited) else FAIL_BACKOFF
+
+
+def cached_fetch(
+    prefix: str,
+    identifier: str,
+    ttl: int,
+    fetcher: Callable[[], T],
+    *,
+    stale_limit: int = STALE_LIMIT,
+) -> T:
+    """Return a saved copy while it is fresh, otherwise fetch and save.
+
+    If the fetch fails, an older saved copy is returned (and noted as stale) instead of an
+    error. A failure is remembered for a short while, so a source that is down costs the
+    first scan its wait and the following scans nothing. Failures are never saved as data.
+    """
     key = _cache_key(prefix, identifier)
-    hit = cache.get(key)
-    if hit is not None:
-        return hit
-    value = fetcher()
+    now = time.time()
+    entry = store.get(key)
+    if entry is not None and entry.fresh(now):
+        return entry.value  # type: ignore[return-value]
+
+    have_old_copy = entry is not None and entry.value is not None and entry.age(now) <= stale_limit
+    if entry is not None and entry.retry_after > now:  # failed recently: do not hammer the source
+        if have_old_copy:
+            note_stale(prefix, entry.age(now))
+            return entry.value  # type: ignore[return-value]
+        raise RecentFailure(f"{prefix} failed recently ({entry.error or 'no detail'}); retrying shortly")
+
+    try:
+        value = fetcher()
+    except Exception as exc:
+        store.fail(key, repr(exc), _backoff_for(exc))
+        if have_old_copy:
+            note_stale(prefix, entry.age(now))  # type: ignore[union-attr]
+            return entry.value  # type: ignore[union-attr,return-value]
+        raise
     if value is not None:
-        cache.set(key, value, ttl)
+        store.put(key, value, ttl)
     return value
+
+
+def cache_peek(prefix: str, identifier: str, stale_limit: int = STALE_LIMIT):
+    """(value, is_fresh, age_seconds) for a saved copy, or (None, False, 0) when there is none."""
+    entry = store.get(_cache_key(prefix, identifier))
+    now = time.time()
+    if entry is None or entry.value is None or entry.age(now) > stale_limit:
+        return None, False, 0.0
+    return entry.value, entry.fresh(now), entry.age(now)
+
+
+def cache_put(prefix: str, identifier: str, value: Any, ttl: int) -> None:
+    store.put(_cache_key(prefix, identifier), value, ttl)
+
+
+def cache_failed(prefix: str, identifier: str, exc: Exception) -> None:
+    store.fail(_cache_key(prefix, identifier), repr(exc), _backoff_for(exc))

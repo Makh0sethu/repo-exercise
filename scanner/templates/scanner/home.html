@@ -1,0 +1,144 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: dependency security and the latest security news{% endblock %}
+{% block body_class %}home{% endblock %}
+{% block head %}{% load static %}<link rel="stylesheet" href="{% static 'scanner/home.css' %}">{% endblock %}
+{% block content %}
+
+<section class="carousel iz-card" aria-roledescription="carousel" aria-label="What Sentinel does" data-carousel>
+  <div class="carousel-viewport">
+    <div class="carousel-track" data-track>
+
+      <article class="slide slide--blue" role="group" aria-roledescription="slide" aria-label="1 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Dependency scanner</small>
+          <h1 class="slide-title">Know what's vulnerable before attackers do</h1>
+          <p>Drop in <code>requirements.txt</code>, <code>pyproject.toml</code>, <code>package.json</code> or a lockfile. Sentinel checks every package against public advisories in seconds. Nothing you upload is stored.</p>
+          <div class="slide-cta"><md-filled-button href="{% url 'scanner:scan' %}">Scan dependencies</md-filled-button></div>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><rect x="40" y="18" width="96" height="124" rx="12" fill="none" stroke="currentColor" stroke-width="5"/><path d="M60 50h56M60 72h56M60 94h34" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="138" cy="112" r="26" fill="none" stroke="currentColor" stroke-width="6"/><path d="M157 131l20 20" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>
+      </article>
+
+      <article class="slide slide--purple" role="group" aria-roledescription="slide" aria-label="2 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Six sources, one answer</small>
+          <h2 class="slide-title">OSV.dev, CISA KEV, RetireJS, NVD, CVE.org and the news</h2>
+          <p>All six are asked at once. Duplicates are merged, and every finding shows which sources back it and how each one rated it.</p>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><circle cx="100" cy="80" r="22" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="5"><circle cx="100" cy="22" r="12"/><circle cx="150" cy="51" r="12"/><circle cx="150" cy="109" r="12"/><circle cx="100" cy="138" r="12"/><circle cx="50" cy="109" r="12"/><circle cx="50" cy="51" r="12"/><path d="M100 34v24M140 57l-21 12M140 103l-21-12M100 126v-24M60 103l21-12M60 57l21 12"/></g></svg>
+      </article>
+
+      <article class="slide slide--teal" role="group" aria-roledescription="slide" aria-label="3 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Signal, not noise</small>
+          <h2 class="slide-title">Confirmed, possible, or not your problem</h2>
+          <p>Exact versions are confirmed. Ranges like <code>&gt;=5.2</code> only show advisories that can reach them, and old bugs a plain update already fixes are counted separately. In our own tests that cut 719 alerts to 83.</p>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M20 24h160l-58 62v44l-44 18V86z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M78 56h44" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
+      </article>
+
+      <article class="slide slide--red" role="group" aria-roledescription="slide" aria-label="4 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Fix first</small>
+          <h2 class="slide-title">Exploited bugs and malware rise to the top</h2>
+          <p>Anything on CISA's Known Exploited list or flagged as malicious code is never buried. A single table tells you which upgrade clears the most findings.</p>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M100 14c8 26 40 36 40 74a40 40 0 0 1-80 0c0-16 8-26 16-34 0 16 8 24 16 24 0-30-8-46 8-64z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+      </article>
+
+      <article class="slide slide--orange" role="group" aria-roledescription="slide" aria-label="5 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Reports and articles</small>
+          <h2 class="slide-title">Official advisories, kept apart from the headlines</h2>
+          <p>CISA advisories and vendor bulletins sit in their own lane. News that names a CVE you actually have is marked, so a story about your stack never gets lost in the feed.</p>
+          <div class="slide-cta"><md-outlined-button href="#latest">Read the latest</md-outlined-button></div>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><rect x="22" y="24" width="112" height="112" rx="10" fill="none" stroke="currentColor" stroke-width="5"/><path d="M40 52h76M40 74h76M40 96h48" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M134 46h30a12 12 0 0 1 12 12v66a12 12 0 0 1-24 0V46" fill="none" stroke="currentColor" stroke-width="5"/></svg>
+      </article>
+
+      <article class="slide slide--yellow" role="group" aria-roledescription="slide" aria-label="6 of 6">
+        <div class="slide-text">
+          <small class="slide-kicker">Private by design</small>
+          <h2 class="slide-title">Your files stay yours</h2>
+          <p>Uploads are read in memory and thrown away. Results live only in your browser session. Only public lookups, like advisory records and feed copies, are saved to keep things fast.</p>
+          <div class="slide-cta"><md-filled-button href="{% url 'scanner:scan' %}">Start a scan</md-filled-button></div>
+        </div>
+        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M100 14l56 20v42c0 32-24 58-56 66-32-8-56-34-56-66V34z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M76 80l16 16 32-32" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </article>
+
+    </div>
+  </div>
+  <div class="carousel-controls no-print">
+    <button type="button" class="iz-chip carousel-btn" data-prev aria-label="Previous slide"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="carousel-dots" role="group" aria-label="Choose slide" data-dots></div>
+    <button type="button" class="iz-chip carousel-btn" data-next aria-label="Next slide"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+    <button type="button" class="iz-chip carousel-btn" data-pause aria-label="Pause slides" aria-pressed="false"><svg class="i-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><svg class="i-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg></button>
+  </div>
+</section>
+
+<section class="newsroom" id="latest" aria-labelledby="latest-title">
+  <div class="section-head">
+    <h2 class="iz-title" id="latest-title">Latest <b>Security News</b></h2>
+    <p class="muted small">{{ h.total }} stories from {{ h.feeds }} feeds{% if h.hours_old %} · oldest copy {{ h.hours_old }} h old{% endif %}{% if h.updating %} · refreshing in the background{% endif %}</p>
+  </div>
+
+  {% if h.lead %}
+  <div class="newsroom-grid">
+    <div class="news-main">
+      <a class="iz-card lead-story" href="{{ h.lead.url }}" rel="noopener" target="_blank">
+        <div class="story-art story-art--{{ h.lead.source_slug }}" aria-hidden="true"><span>{{ h.lead.initials }}</span></div>
+        <div class="lead-text">
+          <div class="story-meta"><span class="badge badge--news">{{ h.lead.source }}</span> <time datetime="{{ h.lead.iso }}" title="{{ h.lead.date }}">{{ h.lead.ago }}</time></div>
+          <h3>{{ h.lead.title }}</h3>
+          {% if h.lead.excerpt %}<p class="muted">{{ h.lead.excerpt }}</p>{% endif %}
+        </div>
+      </a>
+
+      <div class="story-grid">
+        {% for s in h.articles %}
+        <a class="iz-card story-card" href="{{ s.url }}" rel="noopener" target="_blank">
+          <div class="story-art story-art--sm story-art--{{ s.source_slug }}" aria-hidden="true"><span>{{ s.initials }}</span></div>
+          <div class="story-meta"><span class="badge badge--news">{{ s.source }}</span> <time datetime="{{ s.iso }}" title="{{ s.date }}">{{ s.ago }}</time></div>
+          <h3>{{ s.title }}</h3>
+          {% if s.excerpt %}<p class="muted small">{{ s.excerpt }}</p>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="iz-card reports-rail" aria-labelledby="reports-title">
+      <h2 class="iz-title" id="reports-title">Security <b>Reports</b></h2>
+      <p class="muted small">Official advisories and bulletins</p>
+      {% for s in h.reports %}
+      <a class="report-item" href="{{ s.url }}" rel="noopener" target="_blank">
+        <span class="report-source">{{ s.source }} · <time datetime="{{ s.iso }}" title="{{ s.date }}">{{ s.ago }}</time></span>
+        <b>{{ s.title }}</b>
+      </a>
+      {% empty %}
+      <p class="muted small">No official reports saved yet.</p>
+      {% endfor %}
+      <md-outlined-button href="{% url 'scanner:scan' %}">Check your packages against these</md-outlined-button>
+    </aside>
+  </div>
+  {% else %}
+  <div class="iz-card panel empty">
+    <b>{% if h.updating %}Fetching the latest headlines…{% else %}No headlines available right now.{% endif %}</b>
+    <span class="muted">{% if h.updating %}The news feeds are being downloaded in the background. Refresh in a moment.{% else %}The news feeds could not be reached. Scanning still works.{% endif %}</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block ticker %}
+{% if h.ticker %}
+<div class="ticker no-print" role="region" aria-label="Latest headlines" data-ticker>
+  <span class="ticker-label">Headlines</span>
+  <div class="ticker-viewport">
+    <ul class="ticker-track">
+      {% for s in h.ticker %}<li><a href="{{ s.url }}" rel="noopener" target="_blank"><span class="ticker-src">{{ s.source }}</span>{{ s.title }}</a></li>{% endfor %}
+      {% for s in h.ticker %}<li aria-hidden="true"><a href="{{ s.url }}" rel="noopener" target="_blank" tabindex="-1"><span class="ticker-src">{{ s.source }}</span>{{ s.title }}</a></li>{% endfor %}
+    </ul>
+  </div>
+  <button type="button" class="ticker-pause" data-ticker-pause aria-pressed="false" aria-label="Pause headlines">Pause</button>
+</div>
+{% endif %}
+{% endblock %}

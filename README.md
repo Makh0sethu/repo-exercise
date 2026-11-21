@@ -2,6 +2,8 @@
 
 Django web app for scanning project dependencies against public vulnerability databases and security news feeds, styled with **izitho M3** (`scanner/static/scanner/izitho-m3.css`). Nothing you upload is saved.
 
+> How scanning works (sources, saved copies, limits, failure behaviour) and what changed recently: [docs/scanning.md](docs/scanning.md).
+
 ## Run it locally
 
 ```bash
@@ -184,8 +186,33 @@ Warm caches via cron with:
 python manage.py refresh_cache
 ```
 
+## Source limits and how Sentinel stays inside them
+What each source documents (checked 20 Nov 2026; confirm on the linked pages before relying on a number):
+
+| Source | Published limit or rule | What Sentinel does |
+|---|---|---|
+| **OSV.dev** | [No rate limit at present](https://google.github.io/osv.dev/faq/), but abuse can be blocked. Response size limit 32 MiB on HTTP/1.1. Its [latency targets](https://osv.dev/blog/posts/api-latency-improvements-and-revised-slos/) for the batch API are P50 0.5 s, P90 4 s, P95 6 s. Users report a cap of 1,000 queries per batch (not in OSV's own docs). | One batch call per 500 packages, advisory details fetched 8 at a time, everything saved for 24 h. |
+| **NVD** | [5 requests per rolling 30 s without an API key, 50 with one](https://nvd.nist.gov/developers/start-here). Key goes in the `apiKey` header. Over the limit gives HTTP 429. NVD's [workflow guide](https://nvd.nist.gov/developers/api-workflows) suggests about 6 s between scripted requests. | A shared budget of 4 (no key) or 49 (key) requests per 30 s; over budget a call is skipped and a saved copy is used. After a 429 that item is left alone for 10 minutes. Set `NVD_API_KEY` for the higher limit. |
+| **CVE.org (CVE Services)** | [No rate limit is published](https://www.cve.org/allresources/cveservices) that I could find. Free for public use under the [CVE Program terms](https://www.cve.org/ResourcesSupport/FAQs); the List may be copied and analysed but not altered. Bulk use is meant to go through the [cvelistV5 repository](https://github.com/CVEProject/cvelistV5). | At most 25 single-record lookups per scan, 6 at a time, severity only saved for 24 h. |
+| **CISA KEV** | No rate limit or fixed update interval found. [Catalog page](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) links a licence that I could not read, so check it before redistributing the data. Updated whenever new exploited CVEs are added (CISA announced additions on 13 and 18 Nov 2026). | One download per day (about 1.4 MB, only the CVE ids are kept). |
+| **RetireJS** | [Apache-2.0 repository](https://github.com/RetireJS/retire.js/). No limit documented for the file, but GitHub's raw host can [rate-limit IPs that fetch too often](https://github.com/orgs/community/discussions/157940). | One download per day (about 630 KB), saved for 24 h and reused if GitHub is slow. |
+| **Hacker News search (Algolia)** | [10,000 requests per hour per IP](https://hn.algolia.com/api), at most 1,000 hits per query. | At most 5 searches per scan, each saved for 1 h. |
+| **News RSS feeds** (6 publishers) | **Not researched yet.** Each publisher sets its own terms. | One request per feed per hour, each feed saved on its own. |
+
+Nothing above says Sentinel will be banned at this volume, but none of these services promises it either. Keep `SENTINEL_RATE_LIMIT` on, run `manage.py refresh_cache` on a schedule instead of letting scans trigger downloads, and use an NVD API key.
+
+## Saved copies (the cache)
+Public lookups are saved in `cache/public-cache.sqlite3` (`SENTINEL_CACHE_PATH`), a file of its own. It survives restarts and is shared by every server worker. **Uploaded files, pasted text and scan results are never put in it.**
+- **Fresh** copies (24 h for advisories and catalogs, 1 h for news) are used without touching the network.
+- **Old** copies are still used when the live source is slow or down (up to 30 days; news 7 days). The results page then says "X is showing saved data" and how old it is.
+- **Failures are remembered, not saved as data**: a source that just failed is not asked again for a minute (10 minutes after a 429), so one outage doesn't make every scan wait. A failure is never stored as an answer.
+- **Only what Sentinel uses is kept**: KEV as a list of CVE ids, CVE.org and NVD single lookups as a severity, NVD product queries as the matching rows.
+- **Warm it ahead of scans** with `python manage.py refresh_cache` (KEV, RetireJS, news) on a schedule. `--clear` forgets everything.
+- **When a source fails**, packages keep any findings and news the other sources returned. They are marked "partly checked" or "Not checked", never hidden and never shown clean.
+
 ## Security & production
 - 1 MB upload limit, memory-only upload handler (uploads are never written to disk or DB).
+- Scans wait at most `SENTINEL_SCAN_DEADLINE` seconds (default 25) for the sources; they finish sooner when all answer. A source still running then is shown as **timed out**, and its packages as Not checked.
 - Per-IP rate limiting (`SENTINEL_RATE_LIMIT`, default 10 scans/min; `SENTINEL_PREVIEW_RATE_LIMIT`, default 30/min).
 - Strict `Content-Security-Policy` (`script-src 'self'`), `Permissions-Policy`, HSTS, and `X-Frame-Options: DENY`.
 - Copy `.env.example` to `.env`, set `DJANGO_DEBUG=0`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, and run with Docker (`docker compose up --build`) or `gunicorn config.wsgi:application`.

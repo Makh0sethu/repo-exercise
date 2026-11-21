@@ -94,7 +94,7 @@ def dependency_scan(spec, ctx) -> AdapterResult:
     if not parsed.packages:
         return AdapterResult(argv, 0, "No dependency files found", summary={"files": len(uploads), "packages": 0})
     try:
-        vulns = query_osv(parsed.packages, fetcher=lambda *a, **k: scanner_scan._get_json(*a, **k))
+        vulns = query_osv(parsed.packages, fetcher=lambda *a, **k: scanner_scan._get_json(*a, **k), allow_stale=False)
     except Exception as exc:
         return AdapterResult(argv, 2, "", f"OSV.dev lookup failed: {exc!r}", summary={"error": "osv unreachable"})
     findings, lines = [], []

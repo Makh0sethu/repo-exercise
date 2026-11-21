@@ -2,6 +2,8 @@
 import importlib.util
 import mimetypes
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 # Windows can map .js/.css to text/plain in the registry, and browsers then refuse
@@ -83,6 +85,17 @@ if _DB_NAME:
 else:
     DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
 
+# Saved copies of public lookups (advisories, catalogs, news). A small SQLite file of its own,
+# so it survives restarts and is shared by all workers. Uploads are never stored in it.
+# Put it on a persistent volume in production. Tests use a throwaway file.
+if "test" in sys.argv[:2]:
+    SENTINEL_CACHE_PATH = Path(tempfile.gettempdir()) / f"sentinel-test-cache-{os.getpid()}.sqlite3"
+else:
+    SENTINEL_CACHE_PATH = Path(os.environ.get("SENTINEL_CACHE_PATH", BASE_DIR / "cache" / "public-cache.sqlite3"))
+
+# The home page refreshes out-of-date news feeds in the background. Never during tests.
+SENTINEL_HOME_LIVE_REFRESH = os.environ.get("SENTINEL_HOME_LIVE_REFRESH", "1") == "1" and "test" not in sys.argv[:2]
+
 # Public vulnerability/news lookups are cached (never uploads). In-memory on your machine,
 # in a database table when PostgreSQL is configured (create it: manage.py createcachetable).
 if _DB_NAME:
@@ -154,6 +167,9 @@ FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler
 
 # External API keys & rate limiting (public feeds only).
 NVD_API_KEY = os.environ.get("NVD_API_KEY", "")
+# Longest a scan waits for the vulnerability sources. Scans finish sooner when every source
+# answers; a source still running at this point is shown as "timed out", never as clean.
+SENTINEL_SCAN_DEADLINE = float(os.environ.get("SENTINEL_SCAN_DEADLINE", "25"))
 SENTINEL_RATE_LIMIT = int(os.environ.get("SENTINEL_RATE_LIMIT", "10"))
 SENTINEL_PREVIEW_RATE_LIMIT = int(os.environ.get("SENTINEL_PREVIEW_RATE_LIMIT", "30"))
 SENTINEL_TRUST_PROXY = os.environ.get("SENTINEL_TRUST_PROXY", "0") == "1"  # legacy name; same switch as SENTINEL_TRUST_X_FORWARDED_FOR

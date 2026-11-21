@@ -266,3 +266,84 @@ if (watched) {
   };
   setTimeout(poll, 3000);
 }
+
+// ---------------------------------------------------------------- home: carousel
+// Auto-advances every 7 s; pauses on hover, keyboard focus, the pause button, a hidden tab,
+// or when the visitor prefers reduced motion (WCAG 2.2.2: moving content can be paused).
+const carousel = $("[data-carousel]");
+if (carousel) {
+  const track = $("[data-track]", carousel);
+  const slides = $$(".slide", carousel);
+  const dots = $("[data-dots]", carousel);
+  const pauseBtn = $("[data-pause]", carousel);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let index = 0, timer = null, userPaused = reduced, hovering = false;
+
+  const buttons = slides.map((_, i) => {
+    const b = el("button", { type: "button", "aria-label": `Show slide ${i + 1} of ${slides.length}` });
+    b.addEventListener("click", () => { go(i); restart(); });
+    dots.append(b);
+    return b;
+  });
+
+  function go(i) {
+    index = (i + slides.length) % slides.length;
+    track.style.transform = `translateX(-${index * 100}%)`;
+    slides.forEach((s, n) => {
+      const on = n === index;
+      s.setAttribute("aria-hidden", String(!on));
+      s.inert = !on;                                      // off-screen slides' buttons are not tabbable
+    });
+    buttons.forEach((b, n) => b.setAttribute("aria-current", String(n === index)));
+  }
+  function stop() { clearInterval(timer); timer = null; }
+  function restart() {
+    stop();
+    if (!userPaused && !hovering && !document.hidden) timer = setInterval(() => go(index + 1), 7000);
+  }
+  function syncPause() {
+    carousel.classList.toggle("is-paused", userPaused);
+    pauseBtn.setAttribute("aria-pressed", String(userPaused));
+    pauseBtn.setAttribute("aria-label", userPaused ? "Play slides" : "Pause slides");
+  }
+
+  $("[data-prev]", carousel).addEventListener("click", () => { go(index - 1); restart(); });
+  $("[data-next]", carousel).addEventListener("click", () => { go(index + 1); restart(); });
+  pauseBtn.addEventListener("click", () => { userPaused = !userPaused; syncPause(); restart(); });
+  carousel.addEventListener("mouseenter", () => { hovering = true; stop(); });
+  carousel.addEventListener("mouseleave", () => { hovering = false; restart(); });
+  carousel.addEventListener("focusin", () => { hovering = true; stop(); });
+  carousel.addEventListener("focusout", (e) => { if (!carousel.contains(e.relatedTarget)) { hovering = false; restart(); } });
+  carousel.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { go(index - 1); e.preventDefault(); }
+    if (e.key === "ArrowRight") { go(index + 1); e.preventDefault(); }
+  });
+  document.addEventListener("visibilitychange", restart);
+
+  // Swipe on touch screens.
+  let startX = null;
+  track.addEventListener("touchstart", (e) => { startX = e.touches[0].clientX; stop(); }, { passive: true });
+  track.addEventListener("touchend", (e) => {
+    if (startX === null) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 40) go(index + (dx < 0 ? 1 : -1));
+    startX = null; restart();
+  });
+
+  go(0); syncPause(); restart();
+}
+
+// ---------------------------------------------------------------- home: headline ticker
+const ticker = $("[data-ticker]");
+if (ticker) {
+  const tickerTrack = $(".ticker-track", ticker), tickerPause = $("[data-ticker-pause]", ticker);
+  // A steady reading speed (about 60 px/s) whatever the number of headlines.
+  const fit = () => ticker.style.setProperty("--ticker-duration", `${Math.max(30, Math.round(tickerTrack.scrollWidth / 2 / 60))}s`);
+  fit(); addEventListener("resize", fit);
+  tickerPause.addEventListener("click", () => {
+    const paused = ticker.classList.toggle("is-paused");
+    tickerPause.setAttribute("aria-pressed", String(paused));
+    tickerPause.textContent = paused ? "Play" : "Pause";
+    tickerPause.setAttribute("aria-label", paused ? "Play headlines" : "Pause headlines");
+  });
+}

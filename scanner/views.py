@@ -6,9 +6,9 @@ from django.http import JsonResponse
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from . import history
+from . import headlines, history
 from .logos import logo_for
 from .models import ScanLog
 from .parsers import parse_inputs
@@ -79,6 +79,18 @@ def _read_inputs(request):
 def _form_values(request):
     """What the person typed, so an error never throws their input away."""
     return {"pasted": request.POST.get("pasted", ""), "other": request.POST.get("other", "")}
+
+
+@require_GET
+def home(request):
+    """Landing page: what Sentinel does, then the latest security news."""
+    return render(request, "scanner/home.html", {"h": headlines.latest()})
+
+
+@require_http_methods(["GET", "POST"])
+def scan_entry(request):
+    """/scan/ shows the form on GET and runs the scan on POST."""
+    return run_scan_view(request) if request.method == "POST" else scan_page(request)
 
 
 @require_GET

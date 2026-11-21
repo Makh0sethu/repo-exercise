@@ -14,7 +14,8 @@ def sentinel(request):
     path = request.path
     signed_in = bool(user and user.is_authenticated)
     items = [
-        {"label": "Scan", "url": reverse("scanner:scan"), "active": path == "/" or path.startswith("/scan/")},
+        {"label": "Home", "url": reverse("scanner:home"), "active": path == "/"},
+        {"label": "Scan", "url": reverse("scanner:scan"), "active": path.startswith("/scan/")},
         {"label": "Results", "url": reverse("scanner:results"), "active": _active(path, "/results/"),
          "count": len(request.session.get("scan_history", [])) if hasattr(request, "session") else 0},
     ]

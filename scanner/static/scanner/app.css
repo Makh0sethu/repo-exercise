@@ -167,7 +167,7 @@ md-outlined-text-field { --md-outlined-text-field-container-shape: 14px; min-wid
 .story > a { font-size: 16px; font-weight: 500; text-decoration: none; }
 .sources { border-radius: 16px; box-shadow: var(--iz-inset); padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--iz-ink-2); }
 .src i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--iz-unknown); }
-.src--ok i { background: var(--iz-teal); } .src--unreachable i { background: var(--iz-red); }
+.src--ok i { background: var(--iz-teal); } .src--unreachable i { background: var(--iz-red); } .src--timeout i { background: var(--iz-orange); }
 [hidden] { display: none !important; }
 
 @media print {
@@ -219,3 +219,12 @@ form.inline { display: inline; margin: 0; }
 .problem-card p { margin: 8px 0 0; font-size: 14px; }
 .open-run { grid-column: 1 / -1; margin: 0; }
 .badge--unrated { background: var(--sev-unknown-bg); color: var(--sev-unknown-ink); }
+
+/* ---- Fix plan: "Fix first" table and per-package fix groups ---- */
+.actions { margin-bottom: 24px; }
+.fixtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fixtable th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--iz-ink-2); padding: 8px 10px; }
+.fixtable td { padding: 10px; border-top: 1px solid var(--iz-line); vertical-align: middle; }
+.fixline { margin: 4px 0 8px; font-size: 14px; }
+.fixgroup { margin: 14px 0 6px; font: 500 13px Roboto, system-ui, sans-serif; color: var(--iz-ink-2); text-transform: uppercase; letter-spacing: .5px; }
+@media (max-width: 720px) { .fixtable { display: block; overflow-x: auto; } }
