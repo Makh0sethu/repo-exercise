@@ -1,9 +1,10 @@
 """Management command to refresh cached public vulnerability & news feeds."""
 from __future__ import annotations
 
-from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
+from scanner import store
+from scanner.http_client import STALE_LIMIT, clear_cache
 from scanner.news import fetch_all_rss_stories
 from scanner.sources import fetch_cisa_kev, fetch_retirejs_repo
 
@@ -20,7 +21,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options) -> None:
         if options["clear"]:
-            cache.clear()
+            clear_cache()
             self.stdout.write("Cleared cache.")
 
         try:
@@ -41,3 +42,7 @@ class Command(BaseCommand):
             self.stdout.write(status(f"News RSS: {len(stories)} recent stories cached."))
         except Exception as exc:
             self.stderr.write(self.style.WARNING(f"News RSS failed: {exc}"))
+
+        removed = store.purge(STALE_LIMIT)
+        info = store.stats()
+        self.stdout.write(f"Saved copies: {info['with_data']} with data" + (f", {removed} too old removed." if removed else "."))

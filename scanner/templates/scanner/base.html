@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
 <link rel="stylesheet" href="{% static 'scanner/izitho-m3.css' %}">
 <link rel="stylesheet" href="{% static 'scanner/app.css' %}">
+{% block head %}{% endblock %}
 <script type="module" src="{% static 'scanner/vendor/material-web.js' %}"></script>
 <script type="module" src="{% static 'scanner/app.js' %}"></script>
 </head>
@@ -16,7 +17,7 @@
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="nav-wrap no-print">
   <nav class="nav" aria-label="Main">
-    <a class="brand" href="{% url 'scanner:scan' %}" aria-label="Sentinel home">
+    <a class="brand" href="{% url 'scanner:home' %}" aria-label="Sentinel home">
       <span class="iz-chip brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--iz-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
       <b>Sentinel</b>
     </a>
@@ -44,6 +45,7 @@
 {% block crumbs %}{% endblock %}
 {% block content %}{% endblock %}
 </main>
+{% block ticker %}{% endblock %}
 <footer class="foot">
 Sentinel · Uploaded files aren&#39;t saved. Each scan is logged (time, IP address, package list) for security and debugging and deleted after {{ retention_days }} days. Your recent results are kept only until you close the browser or sign out. · package logos from <a href="https://devicon.dev" rel="noopener">Devicon</a>, trademarks of their owners
 </footer>

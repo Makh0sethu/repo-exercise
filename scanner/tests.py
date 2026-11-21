@@ -1,7 +1,9 @@
 import json
+import time
+from datetime import datetime
 from unittest import mock
 
-from django.core.cache import cache
+from .http_client import RateLimited, RecentFailure, cache_peek, cached_fetch, clear_cache, stale_since
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import Group, User
 from django.core.management import call_command
@@ -13,7 +15,8 @@ from .models import ScanLog
 
 from .news import match_news
 from .parsers import Package, parse_inputs, parse_other, parse_requirements
-from .scan import build_result
+from .scan import build_result, run_scan
+from .sources import _NVD_BUDGET, _nvd_get, query_osv
 from .sources import query_retirejs
 from .versions import compare_versions, cvss3_bucket, cvss4_bucket, version_in_range, version_sort_key
 
@@ -224,7 +227,7 @@ class PipelineLogicTests(SimpleTestCase):
 
 class ViewTests(TestCase):
     def setUp(self):
-        cache.clear()
+        clear_cache()
 
     def _patch_secondary_sources(self):
         """Context manager stack mocking secondary sources offline-safely."""
@@ -236,7 +239,7 @@ class ViewTests(TestCase):
         ]
 
     def test_scan_page_and_security_headers(self):
-        r = self.client.get("/")
+        r = self.client.get("/scan/")
         self.assertContains(r, "Scan dependencies")
         self.assertIn("Content-Security-Policy", r)
         self.assertIn("script-src 'self'", r["Content-Security-Policy"])
@@ -384,7 +387,7 @@ class OfflineSourcesMixin:
 
     def setUp(self):
         super().setUp()
-        cache.clear()
+        clear_cache()
         for target, value in [
             ("scanner.scan.fetch_cisa_kev", set()),
             ("scanner.scan.query_retirejs", {}),
@@ -444,7 +447,7 @@ class TracingTests(OfflineSourcesMixin, TestCase):
         self.assertEqual(ScanLog.objects.count(), 1)
 
     def test_privacy_notice_is_shown(self):
-        self.assertContains(self.client.get("/"), "your IP address and the package names are logged")
+        self.assertContains(self.client.get("/scan/"), "your IP address and the package names are logged")
 
 
 class PermissionTests(OfflineSourcesMixin, TestCase):
@@ -552,7 +555,8 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
         self.assertNotIn("Security runs", page); self.assertNotIn(">Admin", page)
 
     def test_current_page_is_marked_in_the_nav(self):
-        self.assertRegex(self.client.get("/").content.decode(), r'class="nav-link is-active" aria-current="page">Scan')
+        self.assertRegex(self.client.get("/scan/").content.decode(), r'class="nav-link is-active" aria-current="page">Scan')
+        self.assertRegex(self.client.get("/").content.decode(), r'class="nav-link is-active" aria-current="page">Home')
         self.assertRegex(self.client.get("/results/").content.decode(), r'class="nav-link is-active" aria-current="page">Results')
 
     def test_nav_counts_saved_results(self):
@@ -568,8 +572,556 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
         page = self.client.get(self.scan()["Location"])
         self.assertContains(page, 'aria-label="Breadcrumb"')
         self.assertContains(page, "← Edit input")
-        self.assertContains(page, "/?new=1")                                     # "New scan" starts clean
+        self.assertContains(page, "/scan/?new=1")                                     # "New scan" starts clean
 
     def test_new_scan_link_and_state_hooks_exist_on_the_form(self):
-        page = self.client.get("/")
+        page = self.client.get("/scan/")
         self.assertContains(page, "data-keep-state"); self.assertContains(page, 'id="clear-form"')
+
+
+class ScanDeadlineTests(OfflineSourcesMixin, TestCase):
+    """A slow source is "timed out", a failing one is "unreachable", and neither is ever "clean"."""
+
+    def _scan(self, osv):
+        pkgs = parse_inputs([], "django==3.2.0").packages
+        with mock.patch("scanner.scan.query_osv", side_effect=osv):
+            return run_scan(pkgs)
+
+    @override_settings(SENTINEL_SCAN_DEADLINE=0.2)
+    def test_slow_source_is_reported_as_timed_out_not_unreachable(self):
+        import time
+
+        def slow(*a, **k):
+            time.sleep(1.5)
+            return {}
+
+        started = time.monotonic()
+        result = self._scan(slow)
+        self.assertLess(time.monotonic() - started, 1.2)  # did not wait for the slow source
+        self.assertEqual({s["name"]: s["status"] for s in result["sources"]}["OSV.dev"], "timeout")
+        pkg = result["packages"][0]
+        self.assertFalse(pkg["checked"])
+        self.assertEqual(pkg["unchecked_reason"], "OSV.dev timed out")
+        self.assertEqual(result["clean"], [])
+
+    def test_failing_source_is_still_reported_as_unreachable(self):
+        result = self._scan(OSError("offline"))
+        self.assertEqual({s["name"]: s["status"] for s in result["sources"]}["OSV.dev"], "unreachable")
+        self.assertEqual(result["packages"][0]["unchecked_reason"], "OSV.dev could not be reached")
+
+    @override_settings(SENTINEL_SCAN_DEADLINE=0.2)
+    def test_results_page_names_the_timed_out_source(self):
+        import time
+        with mock.patch("scanner.scan.query_osv", side_effect=lambda *a, **k: time.sleep(1.5) or {}):
+            r = self.client.post("/scan/", {"pasted": "django==3.2.0"}, follow=True)
+        self.assertContains(r, "OSV.dev timed out.")
+        self.assertContains(r, "Not checked")
+        self.assertNotContains(r, "OSV.dev could not be reached.")
+
+
+class CachedFetchTests(SimpleTestCase):
+    """Saved copies: reused while fresh, served (and noted) when the live source fails."""
+
+    def setUp(self):
+        clear_cache()
+
+    def test_fresh_copy_is_reused_without_fetching_again(self):
+        calls = []
+        fetch = lambda: calls.append(1) or {"a": 1}
+        self.assertEqual(cached_fetch("t", "k", 60, fetch), {"a": 1})
+        self.assertEqual(cached_fetch("t", "k", 60, fetch), {"a": 1})
+        self.assertEqual(len(calls), 1)
+
+    def test_failure_serves_the_old_copy_and_says_so(self):
+        cached_fetch("t", "k", -1, lambda: {"old": True})  # saved, but already expired
+
+        def down():
+            raise OSError("offline")
+
+        started = time.time() - 1
+        self.assertEqual(cached_fetch("t", "k", 60, down), {"old": True})
+        self.assertIn("t", stale_since(started))
+
+    def test_failure_with_nothing_saved_raises_then_backs_off(self):
+        calls = []
+
+        def down():
+            calls.append(1)
+            raise OSError("offline")
+
+        with self.assertRaises(OSError):
+            cached_fetch("t", "k", 60, down)
+        with self.assertRaises(RecentFailure):  # remembered: the source is not hammered again
+            cached_fetch("t", "k", 60, down)
+        self.assertEqual(len(calls), 1)
+
+    def test_a_failure_is_never_saved_as_data(self):
+        with self.assertRaises(OSError):
+            cached_fetch("t", "k", 60, mock.Mock(side_effect=OSError("offline")))
+        self.assertEqual(cache_peek("t", "k"), (None, False, 0.0))
+
+    def test_recovers_once_the_backoff_has_passed(self):
+        with mock.patch("scanner.http_client.FAIL_BACKOFF", 0):
+            with self.assertRaises(OSError):
+                cached_fetch("t", "k", 60, mock.Mock(side_effect=OSError("offline")))
+            self.assertEqual(cached_fetch("t", "k", 60, lambda: {"back": 1}), {"back": 1})
+
+    def test_too_many_requests_backs_off_much_longer(self):
+        from . import store
+        from .http_client import LIMITED_BACKOFF, HttpError, _cache_key
+
+        with self.assertRaises(HttpError):
+            cached_fetch("t", "k", 60, mock.Mock(side_effect=HttpError("u", "HTTP 429", status_code=429)))
+        entry = store.get(_cache_key("t", "k"))
+        self.assertGreater(entry.retry_after - time.time(), LIMITED_BACKOFF - 5)
+
+    def test_saved_data_survives_a_restart(self):
+        from . import store
+
+        cached_fetch("t", "k", 60, lambda: {"kept": 1})
+        store._READY.clear()  # a new process knows nothing in memory, only the file
+        refetch = mock.Mock(side_effect=AssertionError("refetched"))
+        self.assertEqual(cached_fetch("t", "k", 60, refetch), {"kept": 1})
+
+
+def _feed_xml():
+    from datetime import timezone as dt_timezone
+    from email.utils import format_datetime
+
+    return (
+        "<rss><channel><item><title>Django bug exploited</title><link>https://example.com/1</link>"
+        f"<pubDate>{format_datetime(datetime.now(dt_timezone.utc))}</pubDate></item></channel></rss>"
+    ).encode()
+
+
+class FeedCacheTests(SimpleTestCase):
+    def setUp(self):
+        clear_cache()
+
+    def test_all_feeds_down_is_a_failure_not_an_empty_answer_saved_for_an_hour(self):
+        from .news import fetch_all_rss_stories
+
+        with mock.patch("scanner.http_client.FAIL_BACKOFF", 0):
+            with mock.patch("scanner.news.fetch_bytes", side_effect=OSError("offline")):
+                self.assertEqual(fetch_all_rss_stories(), ([], False))
+            # When the network returns, the next look works at once instead of reusing "nothing".
+            with mock.patch("scanner.news.fetch_bytes", return_value=_feed_xml()):
+                stories, ok = fetch_all_rss_stories()
+        self.assertTrue(ok)
+        self.assertEqual(len(stories), 6)  # one per feed
+
+    def test_one_failing_feed_does_not_lose_the_others(self):
+        from .news import FEEDS, fetch_all_rss_stories
+
+        def fake(url, **kw):
+            if "bleepingcomputer" in url:
+                raise OSError("offline")
+            return _feed_xml()
+
+        with mock.patch("scanner.news.fetch_bytes", side_effect=fake):
+            stories, ok = fetch_all_rss_stories()
+        self.assertTrue(ok)
+        self.assertEqual(len(stories), len(FEEDS) - 1)
+
+
+class OsvSavedCopyTests(SimpleTestCase):
+    def setUp(self):
+        clear_cache()
+
+    @staticmethod
+    def _fake(url, body=None, timeout=20):
+        if "querybatch" in url:
+            return {"results": [{"vulns": [{"id": "GHSA-x"}]}]}
+        return {"id": "GHSA-x", "aliases": ["CVE-2020-1"], "summary": "bug",
+                "affected": [{"package": {"ecosystem": "PyPI", "name": "django"},
+                              "ranges": [{"events": [{"introduced": "0"}, {"fixed": "3.2.5"}]}]}]}
+
+    def test_osv_outage_is_answered_from_saved_copies_and_noted(self):
+        pkg = Package("PyPI", "django", "3.2.0")
+        with mock.patch("scanner.sources.TTL_VULN", -1):  # saved, but already expired
+            first = query_osv([pkg], fetcher=self._fake)
+        started = time.time() - 1
+        again = query_osv([pkg], fetcher=mock.Mock(side_effect=OSError("offline")))
+        self.assertEqual(again[(pkg.key, pkg.version)][0]["id"], "GHSA-x")
+        self.assertEqual(again, first)
+        self.assertIn("osv_pkg", stale_since(started))
+
+    def test_osv_outage_with_nothing_saved_still_raises(self):
+        with self.assertRaises(OSError):
+            query_osv([Package("PyPI", "django", "3.2.0")], fetcher=mock.Mock(side_effect=OSError("offline")))
+
+
+class NvdBudgetTests(SimpleTestCase):
+    """NVD allows 5 requests per rolling 30 s without an API key, 50 with one."""
+
+    def setUp(self):
+        _NVD_BUDGET._stamps.clear()
+
+    def test_stays_inside_the_keyless_limit(self):
+        with mock.patch("scanner.sources.fetch_json", return_value={}):
+            for _ in range(4):  # 5 allowed, one kept in reserve
+                _nvd_get("https://nvd.example/x", {}, 5)
+            with self.assertRaises(RateLimited):
+                _nvd_get("https://nvd.example/x", {}, 5)
+
+    def test_an_api_key_raises_the_limit(self):
+        with mock.patch("scanner.sources.fetch_json", return_value={}):
+            for _ in range(49):
+                _nvd_get("https://nvd.example/x", {"apiKey": "k"}, 5)
+            with self.assertRaises(RateLimited):
+                _nvd_get("https://nvd.example/x", {"apiKey": "k"}, 5)
+
+
+class PartialResultsTests(TestCase):
+    """A failed source must not hide what the sources that did answer found."""
+
+    def setUp(self):
+        clear_cache()
+
+    def _vuln(self):
+        return {"id": "CVE-2020-1", "aliases": [], "summary": "found by another source", "severity": "HIGH",
+                "fixed": ["3.2.5"], "published": "2020-01-01", "url": "https://x", "sources": ["RetireJS"],
+                "exploited": False}
+
+    def _page(self, packages, vulns, news):
+        result = build_result(packages, vulns, {"OSV.dev": "unreachable"}, news=news)
+        with mock.patch("scanner.views.run_scan", return_value=result):
+            return self.client.post("/scan/", {"pasted": "x==1"}, follow=True)
+
+    def test_findings_from_other_sources_are_shown_even_when_one_source_failed(self):
+        pkg = Package("PyPI", "django", "3.2.0")
+        r = self._page([pkg], {(pkg.key, pkg.version): [self._vuln()]}, [])
+        self.assertContains(r, "found by another source")
+        self.assertContains(r, "partly checked")
+        self.assertContains(r, "OSV.dev could not be reached")
+        self.assertNotContains(r, "Not checked · 1")  # listed once, with its findings, not hidden
+
+    def test_news_from_other_sources_is_shown_for_a_package_that_could_not_be_checked(self):
+        pkg = Package("PyPI", "flask", "2.0.0")
+        news = [{"source": "Krebs on Security", "title": "Flask apps under attack", "url": "https://k/1",
+                 "date": "2026-11-18", "matches": ["flask"]}]
+        r = self._page([pkg], {}, news)
+        self.assertContains(r, "Not checked · 1")
+        self.assertContains(r, "Flask apps under attack")
+        self.assertContains(r, "Not checked for vulnerabilities")
+
+    def test_saved_data_notice_names_the_source_and_age(self):
+        pkg = Package("PyPI", "django", "3.2.0")
+        result = build_result([pkg], {}, {"OSV.dev": "ok"}, news=[], stale={"osv_pkg": 5 * 3600})
+        with mock.patch("scanner.views.run_scan", return_value=result):
+            r = self.client.post("/scan/", {"pasted": "x==1"}, follow=True)
+        self.assertContains(r, "OSV.dev is showing saved data")
+        self.assertContains(r, "up to 5 hours old")
+
+
+class FeedParsingTests(SimpleTestCase):
+    def test_dates_and_descriptions_are_read_from_childless_elements(self):
+        """Regression: `child("pubDate") or child("published")` dropped every date, so no story ever matched."""
+        from .news import _load_feed
+
+        with mock.patch("scanner.news.fetch_bytes", return_value=_feed_xml()):
+            item = _load_feed("https://example.com/feed")[0]
+        self.assertTrue(item["date"])
+        atom = (b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title><link href="https://a/1"/>'
+                b"<updated>2026-11-18T10:00:00Z</updated><summary>about django</summary></entry></feed>")
+        with mock.patch("scanner.news.fetch_bytes", return_value=atom):
+            item = _load_feed("https://example.com/atom")[0]
+        self.assertEqual(item["date"][:10], "2026-11-18")
+        self.assertEqual(item["text"], "about django")
+
+
+class TriageTests(SimpleTestCase):
+    """Ranges are filtered to what they can actually install; the rest is grouped by fix."""
+
+    @staticmethod
+    def vuln(vid, fixed=(), introduced=(), severity="HIGH", **extra):
+        return {
+            "id": vid, "aliases": [], "summary": vid, "severity": severity, "fixed": list(fixed),
+            "introduced": list(introduced), "published": "", "url": "", "sources": ["OSV.dev"],
+            "exploited": False, **extra,
+        }
+
+    def test_spec_bounds(self):
+        from .triage import spec_bounds
+        b = spec_bounds(">=5.2,<7")
+        self.assertEqual((b.lower, b.upper, b.upper_inclusive), ("5.2", "7", False))
+        b = spec_bounds("^6.2.0")
+        self.assertEqual((b.lower, b.upper), ("6.2.0", "7"))
+        b = spec_bounds("^0.35.4")
+        self.assertEqual((b.lower, b.upper), ("0.35.4", "0.36"))
+        b = spec_bounds("~=2.9")
+        self.assertEqual((b.lower, b.upper), ("2.9", "3"))
+        b = spec_bounds(">= 43")
+        self.assertEqual((b.lower, b.upper), ("43", None))
+        self.assertFalse(spec_bounds("").known)
+        self.assertFalse(spec_bounds("^1.0.0 || ^2.0.0").known)
+
+    def test_could_affect_drops_advisories_outside_the_range(self):
+        from .triage import could_affect, spec_bounds
+        bounds = spec_bounds(">=5.2,<7")
+        self.assertFalse(could_affect(self.vuln("old", fixed=["2.2.4"]), bounds))
+        self.assertFalse(could_affect(self.vuln("equal", fixed=["5.2"]), bounds))
+        self.assertTrue(could_affect(self.vuln("live", fixed=["5.2.4"]), bounds))
+        self.assertTrue(could_affect(self.vuln("unfixed"), bounds))
+        self.assertFalse(could_affect(self.vuln("future", introduced=["8.0"], fixed=["8.1"]), bounds))
+        self.assertTrue(could_affect(self.vuln("from-start", introduced=["0"], fixed=["6.0.2"]), bounds))
+
+    def test_range_package_hides_impossible_advisories_and_says_so(self):
+        pkg = Package("PyPI", "django", None, ">=5.2,<7")
+        vulns = {(pkg.key, None): [
+            self.vuln("GHSA-old", fixed=["2.2.4"]),
+            self.vuln("GHSA-update", fixed=["6.0.2"]),
+            self.vuln("GHSA-unfixed"),
+            self.vuln("GHSA-beyond", fixed=["7.0.1"]),
+        ]}
+        result = build_result([pkg], vulns, {"OSV.dev": "ok"}, news=[])
+        row = result["packages"][0]
+        self.assertEqual(sorted(v["id"] for v in row["vulns"]), ["GHSA-beyond", "GHSA-unfixed"])
+        self.assertEqual(row["hidden"], 1)                                    # cannot affect >=5.2
+        self.assertEqual([u["cve"] for u in row["updatable"]], ["GHSA-update"])  # a plain update fixes it
+        self.assertEqual(result["stats"]["problems"], 2)
+        self.assertEqual((result["stats"]["confirmed"], result["stats"]["possible"]), (0, 2))
+        self.assertEqual((result["stats"]["hidden"], result["stats"]["updatable"]), (1, 1))
+
+    def test_exploited_findings_are_never_demoted_to_updatable(self):
+        pkg = Package("PyPI", "litellm", None, "")
+        vulns = {(pkg.key, None): [self.vuln("GHSA-kev", fixed=["1.5"], exploited=True), self.vuln("GHSA-ok", fixed=["1.4"])]}
+        row = build_result([pkg], vulns, {"OSV.dev": "ok"}, news=[])["packages"][0]
+        self.assertEqual([v["id"] for v in row["vulns"]], ["GHSA-kev"])
+        self.assertEqual(len(row["updatable"]), 1)
+
+    def test_exact_package_is_never_filtered(self):
+        pkg = Package("PyPI", "django", "3.2.0", "==3.2.0")
+        vulns = {(pkg.key, "3.2.0"): [self.vuln("GHSA-old", fixed=["2.2.4"])]}
+        result = build_result([pkg], vulns, {"OSV.dev": "ok"}, news=[])
+        self.assertEqual(len(result["packages"][0]["vulns"]), 1)
+        self.assertEqual(result["stats"]["confirmed"], 1)
+
+    def test_findings_group_by_fix_and_one_upgrade_clears_all(self):
+        pkg = Package("npm", "vite", "6.3.5", "6.3.5")
+        vulns = {(pkg.key, "6.3.5"): [
+            self.vuln("a", fixed=["7.1.5", "8.0.5"], severity="LOW"),
+            self.vuln("b", fixed=["8.3.3"], severity="HIGH"),
+            self.vuln("c", fixed=["8.3.3"], severity="MODERATE"),
+            self.vuln("d", severity="LOW"),
+        ]}
+        row = build_result([pkg], vulns, {"OSV.dev": "ok"}, news=[])["packages"][0]
+        self.assertEqual(row["upgrade_to"], "8.3.3")
+        self.assertEqual([(g["to"], g["count"]) for g in row["fix_groups"]], [("8.3.3", 2), ("7.1.5", 1), (None, 1)])
+        self.assertEqual(row["fix_groups"][0]["worst"], "HIGH")
+
+    def test_malware_and_exploited_sort_first_and_surface_in_actions(self):
+        pkgs = [Package("PyPI", "plain", "1.0", "1.0"), Package("PyPI", "litellm", None, "")]
+        vulns = {
+            (pkgs[0].key, "1.0"): [self.vuln("GHSA-x", fixed=["2.0"], severity="CRITICAL")],
+            (pkgs[1].key, None): [
+                self.vuln("GHSA-y", fixed=["1.5"], severity="HIGH", exploited=True),
+                self.vuln("MAL-2026-1", severity="UNKNOWN"),
+            ],
+        }
+        result = build_result(pkgs, vulns, {"OSV.dev": "ok"}, news=[])
+        self.assertEqual(result["actions"][0]["name"], "litellm")
+        self.assertTrue(result["actions"][0]["malware"])
+        self.assertEqual(result["packages"][0]["vulns"][0]["id"], "MAL-2026-1")
+        self.assertEqual(result["stats"]["malware"], 1)
+
+    def test_retirejs_rows_carry_range_so_ranges_can_be_gated(self):
+        pkg = Package("npm", "react", None, "^19.2.0")
+        repo = {"react": {"vulnerabilities": [
+            {"atOrAbove": "0.0.1", "below": "0.14.0", "severity": "medium", "identifiers": {"CVE": ["CVE-2013-7035"]}}]}}
+        rows = query_retirejs([pkg], repo=repo)[(pkg.key, None)]
+        self.assertEqual((rows[0]["introduced"], rows[0]["fixed"]), (["0.0.1"], ["0.14.0"]))
+        result = build_result([pkg], {(pkg.key, None): rows}, {"RetireJS": "ok", "OSV.dev": "ok"}, news=[])
+        self.assertEqual(result["packages"][0]["vulns"], [])
+        self.assertEqual(result["packages"][0]["hidden"], 1)
+
+    def test_osv_git_ranges_are_not_treated_as_versions(self):
+        from .sources import _osv_fixed
+        vuln = {"affected": [{"package": {"ecosystem": "PyPI", "name": "x"}, "ranges": [
+            {"type": "GIT", "events": [{"fixed": "deadbeefcafe"}]},
+            {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.2"}]}]}]}
+        self.assertEqual(_osv_fixed(vuln, "PyPI", "x"), ["1.2"])
+
+    def test_malware_naming_exact_versions_only_counts_when_the_range_allows_them(self):
+        axios = Package("npm", "axios", None, "^1.7.2")
+        safe = Package("npm", "react-hook-form", None, "^7.82.0")
+        mal = lambda vs: self.vuln("MAL-2026-1", severity="UNKNOWN", versions=vs)
+        vulns = {(axios.key, None): [mal(["0.30.4", "1.14.1"])], (safe.key, None): [mal(["7.73.0"])]}
+        result = build_result([axios, safe], vulns, {"OSV.dev": "ok"}, news=[])
+        rows = {r["name"]: r for r in result["packages"]}
+        self.assertEqual(rows["axios"]["vulns"][0]["in_range_versions"], ["1.14.1"])
+        self.assertTrue(rows["axios"]["malware"])
+        self.assertEqual(rows["react-hook-form"]["vulns"], [])
+        self.assertEqual(rows["react-hook-form"]["hidden"], 1)
+
+
+class EvidenceAndNewsSplitTests(TestCase):
+    """Every source that backs a finding stays on it; reports and articles are kept apart."""
+
+    def setUp(self):
+        clear_cache()
+
+    @staticmethod
+    def row(vid, source, severity="HIGH", aliases=(), **extra):
+        return {"id": vid, "aliases": list(aliases), "summary": "s", "severity": severity, "fixed": ["2.0"],
+                "published": "2024-01-01", "url": f"https://{source}/{vid}", "sources": [source],
+                "exploited": False, **extra}
+
+    def test_duplicate_findings_keep_every_source_as_evidence(self):
+        from .scan import _merge_package_vulns
+        osv = self.row("GHSA-aaaa", "OSV.dev", aliases=["CVE-2024-1"])
+        retire = self.row("CVE-2024-1", "RetireJS", severity="MODERATE")
+        merged = _merge_package_vulns([osv, retire])
+        self.assertEqual(len(merged), 1)
+        v = merged[0]
+        self.assertEqual(v["corroboration"], 2)
+        self.assertEqual({e["source"]: e["id"] for e in v["evidence"]}, {"OSV.dev": "GHSA-aaaa", "RetireJS": "CVE-2024-1"})
+        self.assertTrue(v["disputed"])                       # HIGH vs MODERATE
+        self.assertEqual(v["severity"], "HIGH")               # the higher rating wins
+
+    def test_merging_twice_does_not_double_count_sources(self):
+        from .scan import _merge_package_vulns
+        once = _merge_package_vulns([self.row("GHSA-aaaa", "OSV.dev", aliases=["CVE-2024-1"]), self.row("CVE-2024-1", "RetireJS")])
+        twice = _merge_package_vulns(once)
+        self.assertEqual(twice[0]["corroboration"], 2)
+        self.assertEqual(len(twice[0]["evidence"]), 2)
+
+    def test_kev_flag_counts_as_a_source_with_no_severity_of_its_own(self):
+        from .scan import _merge_package_vulns
+        row = self.row("GHSA-aaaa", "OSV.dev", aliases=["CVE-2024-1"])
+        row["sources"].append("CISA KEV")
+        row["exploited"] = True
+        v = _merge_package_vulns([row])[0]
+        kev = next(e for e in v["evidence"] if e["source"] == "CISA KEV")
+        self.assertEqual((kev["id"], kev["severity"]), ("CVE-2024-1", None))
+        self.assertEqual(v["corroboration"], 2)
+        self.assertFalse(v["disputed"])                       # KEV rates nothing, so it cannot disagree
+
+    def test_stats_count_corroborated_and_single_source(self):
+        pkg = Package("npm", "react", "18.0.0", "18.0.0")
+        vulns = {(pkg.key, "18.0.0"): [
+            self.row("GHSA-aaaa", "OSV.dev", aliases=["CVE-2024-1"]), self.row("CVE-2024-1", "RetireJS", severity="MODERATE"),
+            self.row("GHSA-bbbb", "OSV.dev", aliases=["CVE-2024-2"]),
+        ]}
+        stats = build_result([pkg], vulns, {"OSV.dev": "ok"}, news=[])["stats"]
+        self.assertEqual((stats["corroborated"], stats["single_source"], stats["disputed"]), (1, 1, 1))
+
+    def test_news_is_split_into_reports_and_articles_cve_matches_first(self):
+        news = [
+            {"source": "BleepingComputer", "title": "a", "url": "u1", "date": "2026-11-01", "matches": ["flask"]},
+            {"source": "CISA Advisories", "title": "b", "url": "u2", "date": "2026-11-02", "matches": ["flask"]},
+            {"source": "Krebs on Security", "title": "c", "url": "u3", "date": "2026-11-03", "matches": ["CVE-2024-1"], "matched_by": "cve"},
+            {"source": "Hacker News", "title": "d", "url": "u4", "date": "2026-11-04", "matches": ["flask"]},
+        ]
+        r = build_result([Package("PyPI", "flask", "3.0", "3.0")], {}, {"OSV.dev": "ok"}, news=news)
+        self.assertEqual([n["source"] for n in r["reports"]], ["CISA Advisories"])
+        self.assertEqual([n["source"] for n in r["articles"]], ["Krebs on Security", "BleepingComputer", "Hacker News"])
+        self.assertEqual((r["stats"]["reports"], r["stats"]["articles"], r["stats"]["news"]), (1, 3, 4))
+
+    def test_matcher_tags_kind_and_how_it_matched(self):
+        stories = [
+            {"source": "CISA Advisories", "title": "Flask flaw CVE-2024-99999", "url": "u1", "date": "2026-11-01T00:00:00+00:00", "text": ""},
+            {"source": "Krebs on Security", "title": "flask apps attacked", "url": "u2", "date": "2026-11-01T00:00:00+00:00", "text": ""},
+            {"source": "Krebs on Security", "title": "which one is it, three ways", "url": "u3", "date": "2026-11-01T00:00:00+00:00", "text": ""},
+        ]
+        pkgs = [Package("PyPI", "flask", "3.0"), Package("npm", "which", "1.0"), Package("npm", "three", "0.1")]
+        with mock.patch("scanner.news.fetch_all_rss_stories", return_value=(stories, True)):
+            matched, _ = match_news(pkgs, {"CVE-2024-99999"}, include_hn=False)
+        by = {m["url"]: m for m in matched}
+        self.assertEqual((by["u1"]["kind"], by["u1"]["matched_by"]), ("report", "cve"))
+        self.assertEqual((by["u2"]["kind"], by["u2"]["matched_by"]), ("article", "name"))
+        self.assertNotIn("u3", by)                            # "which" and "three" are common words
+
+    def test_page_shows_sources_and_separate_sections(self):
+        pkg = Package("npm", "react", "18.0.0", "18.0.0")
+        vulns = {(pkg.key, "18.0.0"): [self.row("GHSA-aaaa", "OSV.dev", aliases=["CVE-2024-1"]), self.row("CVE-2024-1", "RetireJS", severity="MODERATE")]}
+        news = [{"source": "CISA Advisories", "title": "Report title", "url": "https://r/1", "date": "2026-11-02", "matches": ["react"]},
+                {"source": "BleepingComputer", "title": "Article title", "url": "https://a/1", "date": "2026-11-03", "matches": ["react"]}]
+        result = build_result([pkg], vulns, {"OSV.dev": "ok", "RetireJS": "ok"}, news=news)
+        with mock.patch("scanner.views.run_scan", return_value=result):
+            r = self.client.post("/scan/", {"pasted": "x==1"}, follow=True)
+        self.assertContains(r, "Backed by 2 sources")
+        self.assertContains(r, "ratings disagree")
+        self.assertContains(r, 'id="reports"')
+        self.assertContains(r, 'id="articles"')
+        html = r.content.decode()
+        reports_at, articles_at = html.index('id="reports"'), html.index('id="articles"')
+        self.assertLess(reports_at, html.index("Report title", reports_at))
+        self.assertLess(html.index("Report title", reports_at), articles_at)      # report sits in its own section
+        self.assertLess(articles_at, html.index("Article title", articles_at))
+        self.assertNotIn("Article title", html[reports_at:articles_at])
+
+
+class HomePageTests(TestCase):
+    """The landing page: what Sentinel does, the latest articles, reports and a headline ticker."""
+
+    def setUp(self):
+        clear_cache()
+
+    @staticmethod
+    def save_feed(name, items):
+        from .http_client import cache_put
+        cache_put("rss_feed", name, items, 3600)
+
+    def story(self, title, hours_ago, url=None, text="Body text."):
+        when = (timezone.now() - timedelta(hours=hours_ago)).isoformat()
+        return {"source": "", "title": title, "url": url or f"https://news.example/{abs(hash(title))}", "text": text, "date": when}
+
+    def test_home_renders_carousel_articles_reports_and_ticker_from_saved_feeds(self):
+        self.save_feed("The Hacker News", [self.story("Newest article", 1), self.story("Older article", 30)])
+        self.save_feed("BleepingComputer", [self.story("Middle article", 5)])
+        self.save_feed("CISA Advisories", [self.story("CISA releases advisory", 2)])
+        r = self.client.get("/")
+        self.assertEqual(r.status_code, 200)
+        page = r.content.decode()
+        self.assertIn('aria-roledescription="carousel"', page)
+        self.assertEqual(page.count('aria-roledescription="slide"'), 6)
+        self.assertIn('class="iz-card lead-story"', page)
+        lead = page.index('class="iz-card lead-story"')
+        self.assertLess(lead, page.index("Newest article"))                    # newest article leads
+        self.assertLess(page.index("Newest article"), page.index("Middle article"))
+        self.assertLess(page.index("Middle article"), page.index("Older article"))
+        rail = page.index('id="reports-title"')
+        self.assertLess(rail, page.index("CISA releases advisory", rail))      # reports sit in their own rail
+        self.assertNotIn("CISA releases advisory", page[lead:rail])
+        self.assertIn('aria-label="Latest headlines"', page)
+        self.assertIn("home.css", page)
+        self.assertIn("4 stories from", page)
+
+    def test_duplicate_stories_and_unsafe_links_are_dropped(self):
+        self.save_feed("The Hacker News", [self.story("Same headline", 1, url="https://a/1"), self.story("javascript link", 1, url="javascript:alert(1)")])
+        self.save_feed("SecurityWeek", [self.story("Same headline!", 2, url="https://b/2"), self.story("Repeat url", 3, url="https://a/1")])
+        from .headlines import latest
+        h = latest()
+        self.assertEqual(h["total"], 1)
+        self.assertEqual(h["lead"]["title"], "Same headline")
+
+    def test_home_never_waits_on_the_network_and_explains_an_empty_feed(self):
+        with mock.patch("scanner.news.fetch_bytes", side_effect=AssertionError("network used")):
+            r = self.client.get("/")
+        self.assertContains(r, "No headlines available right now.")
+        self.assertContains(r, "Scan dependencies")                           # the carousel still sells the scanner
+
+    def test_stale_feeds_are_refreshed_in_the_background_when_enabled(self):
+        self.save_feed("The Hacker News", [self.story("Saved article", 1)])
+        from . import headlines
+        started = []
+        with override_settings(SENTINEL_HOME_LIVE_REFRESH=True),                 mock.patch("scanner.headlines.threading.Thread") as thread:
+            thread.return_value.start.side_effect = lambda: started.append(True)
+            headlines._refreshing.clear()
+            h = headlines.latest()
+            headlines._refreshing.clear()
+        self.assertEqual(h["lead"]["title"], "Saved article")                 # shown at once from the saved copy
+        self.assertTrue(h["updating"])
+        self.assertEqual(started, [True])
+
+    def test_excerpts_are_trimmed_on_a_word(self):
+        from .headlines import _excerpt
+        self.assertEqual(_excerpt("one two three four", limit=10), "one two…")
+        self.assertEqual(_excerpt("  short   text "), "short text")
+
+    def test_scan_form_moved_to_scan_and_still_posts_there(self):
+        page = self.client.get("/scan/").content.decode()
+        self.assertIn('id="scan-form"', page)
+        self.assertIn('action="/scan/"', page)
+        self.assertIn('href="/" aria-label="Sentinel home"', page)

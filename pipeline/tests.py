@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 
 from audit.log import read_evidence, verify_chain
 from audit.models import AuditEvent, EvidenceArtifact
+from scanner.http_client import clear_cache
 
 from .gitsafe import UnsafeTarget, check_git_url, check_ref
 from .models import Finding, Target
@@ -41,6 +42,7 @@ def fake_osv(url, body=None, timeout=20):
             "affected": [{"package": {"ecosystem": "npm", "name": "lodash"}, "ranges": [{"events": [{"fixed": "4.17.21"}]}]}]}
 
 
+
 class GitSafetyTests(TestCase):
     def test_only_https_on_allowed_hosts(self):
         self.assertEqual(check_git_url("https://github.com/Makh0sethu/repo-exercise"), "https://github.com/Makh0sethu/repo-exercise")
@@ -60,6 +62,7 @@ class GitSafetyTests(TestCase):
 @override_settings(PIPELINE_WORKDIR=tempfile.gettempdir())
 class PipelineTests(TestCase):
     def setUp(self):
+        clear_cache()  # saved public lookups from other tests must not stand in for a live answer
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.ev = override_settings(AUDIT_EVIDENCE_DIR=self.tmp.name + "/ev"); self.ev.enable(); self.addCleanup(self.ev.disable)

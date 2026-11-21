@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from .http_client import TTL_NEWS, cached_fetch, fetch_bytes, fetch_json
+from .http_client import STALE_LIMIT_NEWS, TTL_NEWS, cached_fetch, fetch_bytes, fetch_json
 
 HN_SEARCH = "https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=8&query={}"
 FEEDS = {
@@ -22,8 +22,19 @@ FEEDS = {
     "SecurityWeek": "https://feeds.feedburner.com/securityweek",
 }
 
+# Official security publications: advisories and bulletins. Everything else is journalism or discussion.
+REPORT_FEEDS = {"CISA Advisories", "GitHub Security Blog"}
+
+
+def story_kind(source: str) -> str:
+    """'report' for official advisories and bulletins, 'article' for news coverage and discussion."""
+    return "report" if source in REPORT_FEEDS else "article"
+
+
 # Skip very common English/programming words that produce false-positive news matches.
 GENERIC_NAMES = {
+    "which", "three", "immediate", "expect", "long", "platform", "open", "core",
+    "common", "global", "local", "server", "client", "plain", "simple", "base",
     "six", "attrs", "click", "rich", "wheel", "pip", "idna", "toml", "ply",
     "tqdm", "packaging", "typing", "debug", "color", "chalk", "bytes", "path",
     "glob", "mime", "qs", "ms", "fs", "os", "net", "http", "url", "util",
@@ -48,13 +59,10 @@ def _name_pattern(name: str) -> re.Pattern[str]:
     return re.compile(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", re.I)
 
 
-def _fetch_single_feed(name: str, url: str) -> tuple[str, list[dict[str, Any]], bool]:
-    try:
-        raw = fetch_bytes(url, headers={"Accept": "application/rss+xml, application/xml, text/xml"}, timeout=4)
-        root = ET.fromstring(raw)
-    except Exception:
-        return name, [], False
-
+def _load_feed(url: str) -> list[dict[str, Any]]:
+    """Download and parse one feed. Raises on any failure so a failure is never cached as data."""
+    raw = fetch_bytes(url, headers={"Accept": "application/rss+xml, application/xml, text/xml"}, timeout=12)
+    root = ET.fromstring(raw)
     items: list[dict[str, Any]] = []
     for item in root.iter():
         tag = item.tag.split("}")[-1]
@@ -68,47 +76,53 @@ def _fetch_single_feed(name: str, url: str) -> tuple[str, list[dict[str, Any]], 
             if link is not None and link.get("href")
             else (link.text if link is not None else "")
         )
-        desc = child("description") or child("summary") or child("content")
-        date_el = child("pubDate") or child("published") or child("updated")
+        # An XML element with no children is falsy, so `a or b` would skip a valid <pubDate>.
+        first = lambda *tags: next((e for e in (child(t) for t in tags) if e is not None), None)
+        desc = first("description", "summary", "content")
+        date_el = first("pubDate", "published", "updated")
         dt = _parse_date(date_el.text if date_el is not None else None)
         items.append({
-            "source": name,
+            "source": "",
             "title": html.unescape((title.text or "") if title is not None else "").strip(),
             "url": (href or "").strip(),
-            "text": re.sub(r"<[^>]+>", " ", html.unescape(desc.text or "")) if desc is not None else "",
+            "text": re.sub(r"<[^>]+>", " ", html.unescape(desc.text or ""))[:600] if desc is not None else "",
             "date": dt.isoformat() if dt else "",
         })
-    return name, items, True
+    return items
+
+
+def _fetch_single_feed(name: str, url: str) -> tuple[str, list[dict[str, Any]], bool]:
+    """(name, items, ok). Each feed is saved on its own, so one slow feed never costs the others."""
+    try:
+        items = cached_fetch("rss_feed", name, TTL_NEWS, lambda: _load_feed(url), stale_limit=STALE_LIMIT_NEWS)
+    except Exception:
+        return name, [], False
+    return name, [{**i, "source": name} for i in items], True
 
 
 def fetch_all_rss_stories(days: int = 30) -> tuple[list[dict[str, Any]], bool]:
-    """Fetch and cache recent RSS items across all 6 security feeds (1h TTL)."""
-    def _load() -> dict[str, Any]:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        stories: list[dict[str, Any]] = []
-        any_ok = False
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            results = pool.map(lambda kv: _fetch_single_feed(*kv), FEEDS.items())
-            for _, items, ok in results:
-                any_ok = any_ok or ok
-                for item in items:
-                    dt = _parse_date(item["date"])
-                    if dt and dt >= cutoff and item["url"]:
-                        stories.append(item)
-        return {"stories": stories, "ok": any_ok}
-
-    payload = cached_fetch("rss_feeds", f"days:{days}", TTL_NEWS, _load)
-    return payload["stories"], payload["ok"]
+    """Recent stories from all 6 security feeds. ok is True when at least one feed answered."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stories: list[dict[str, Any]] = []
+    any_ok = False
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for _, items, ok in pool.map(lambda kv: _fetch_single_feed(*kv), FEEDS.items()):
+            any_ok = any_ok or ok
+            for item in items:
+                dt = _parse_date(item["date"])
+                if dt and dt >= cutoff and item["url"]:
+                    stories.append(item)
+    return stories, any_ok
 
 
 def _fetch_hn_for_package(name: str, cutoff: datetime) -> tuple[list[dict[str, Any]], bool]:
     def _load() -> list[dict[str, Any]]:
         query = urllib.parse.quote(f"{name} vulnerability")
-        data = fetch_json(HN_SEARCH.format(query), timeout=3)
+        data = fetch_json(HN_SEARCH.format(query), timeout=8)
         return data.get("hits", [])
 
     try:
-        hits = cached_fetch("hn_pkg", name.lower(), TTL_NEWS, _load)
+        hits = cached_fetch("hn_pkg", name.lower(), TTL_NEWS, _load, stale_limit=STALE_LIMIT_NEWS)
     except Exception:
         return [], False
 
@@ -121,6 +135,8 @@ def _fetch_hn_for_package(name: str, cutoff: datetime) -> tuple[list[dict[str, A
         if dt and dt >= cutoff and url and pat.search(title):
             out.append({
                 "source": "Hacker News",
+                "kind": "article",
+                "matched_by": "name",
                 "title": title,
                 "url": url,
                 "date": dt.strftime("%Y-%m-%d"),
@@ -158,6 +174,8 @@ def match_news(
         if hits:
             matched[story["url"]] = {
                 "source": story["source"],
+                "kind": story_kind(story["source"]),
+                "matched_by": "cve" if any(h in cve_pats for h in hits) else "name",
                 "title": story["title"],
                 "url": story["url"],
                 "date": story["date"][:10],
@@ -183,5 +201,7 @@ def match_news(
                         matched[item["url"]] = item
 
     status = "ok" if (rss_ok or hn_ok) else "unreachable"
+    # Newest first; stories that name a CVE id we actually found outrank name-only mentions.
     ranked = sorted(matched.values(), key=lambda s: s["date"], reverse=True)
+    ranked.sort(key=lambda s: s["matched_by"] != "cve")
     return ranked, status

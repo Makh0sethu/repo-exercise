@@ -8,3 +8,4 @@ staticfiles/
 logs/
 evidence/
 osv-data/
+cache/
