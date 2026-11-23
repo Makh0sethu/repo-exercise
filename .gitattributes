@@ -1,0 +1,10 @@
+# Files that run on the Linux server must keep LF line endings, even on a Windows checkout
+# (core.autocrlf=true would otherwise give bash "$'\r': command not found").
+*.sh            text eol=lf
+deploy/**       text eol=lf
+
+# Left out of release packages (git archive), which only need the web app.
+.github/        export-ignore
+cli-draft/      export-ignore
+*.ipynb         export-ignore
+.gitattributes  export-ignore

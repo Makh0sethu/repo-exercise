@@ -1,0 +1,21 @@
+[Unit]
+Description=Sentinel daily maintenance: delete old scan logs, refresh saved public feeds
+After=network.target
+
+[Service]
+Type=oneshot
+User=sentinel
+Group=sentinel
+EnvironmentFile=/etc/sentinel/env
+WorkingDirectory=/opt/sentinel
+ExecStart=/opt/sentinel/.venv/bin/python manage.py purge_scan_logs
+ExecStart=/opt/sentinel/.venv/bin/python manage.py refresh_cache
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/sentinel /var/backups/sentinel
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077

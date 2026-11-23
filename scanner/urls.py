@@ -11,4 +11,5 @@ urlpatterns = [
     path("results/", views.results_list, name="results"),
     path("results/<str:rid>/", views.result_page, name="result"),
     path("about/", views.about, name="about"),
+    path("health/", views.health, name="health"),
 ]

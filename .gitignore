@@ -9,3 +9,6 @@ logs/
 evidence/
 osv-data/
 cache/
+# Deploy gate state (decision 0006) and packaged releases: local only.
+.claude/
+release/

@@ -1,0 +1,28 @@
+[Unit]
+Description=sentinel.uhambo.co.zw (Gunicorn + Django, public-only test site)
+After=network.target
+
+[Service]
+User=sentinel
+Group=sentinel
+EnvironmentFile=/etc/sentinel/env
+WorkingDirectory=/opt/sentinel
+# A scan can wait up to SENTINEL_SCAN_DEADLINE (25 s) on the sources, so threads keep other pages responsive.
+ExecStart=/opt/sentinel/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8101 --workers 2 --threads 4 --timeout 60 --access-logfile -
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/sentinel /var/backups/sentinel
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

@@ -160,6 +160,19 @@ def results_list(request):
 
 
 @require_GET
+def health(request):
+    """For the deploy checks and monitoring: the app answers and its database is reachable."""
+    from django.db import connection
+    try:
+        with connection.cursor() as cur:
+            cur.execute("SELECT 1")
+    except Exception:
+        log.exception("Health check: database unreachable")
+        return JsonResponse({"status": "error"}, status=503)
+    return JsonResponse({"status": "ok"})
+
+
+@require_GET
 def about(request):
     """What Sentinel is, with the full site map and code architecture."""
     return render(request, "scanner/about.html")

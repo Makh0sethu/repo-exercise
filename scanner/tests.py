@@ -590,6 +590,45 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
         self.assertContains(page, "data-keep-state"); self.assertContains(page, 'id="clear-form"')
 
 
+class HealthTests(TestCase):
+    def test_health_answers_ok_as_json(self):
+        r = self.client.get("/health/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"status": "ok"})
+        self.assertEqual(self.client.post("/health/").status_code, 405)
+
+
+@override_settings(SENTINEL_PUBLIC_ONLY=True, ROOT_URLCONF="config.urls_public")
+class PublicOnlyModeTests(TestCase):
+    """SENTINEL_PUBLIC_ONLY=1: the public test site shows the scanner only, no admin parts."""
+
+    def test_admin_sign_in_and_security_runs_are_not_routed(self):
+        from django.conf import settings
+        for path in ("/" + settings.SENTINEL_ADMIN_PATH, "/admin/", "/server/", "/server/audit/",
+                     "/server/runs/1/", "/auth/github/login/", "/auth/github/callback/"):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        self.assertEqual(self.client.post("/server/start/").status_code, 404)
+
+    def test_public_pages_still_work(self):
+        for path in ("/", "/scan/", "/results/", "/about/", "/health/"):
+            self.assertEqual(self.client.get(path).status_code, 200, path)
+
+    def test_nav_has_no_admin_links_or_sign_in(self):
+        staff = User.objects.create_superuser("boss", password="x")
+        self.client.force_login(staff)                                         # even a superuser sees none of it
+        page = self.client.get("/about/").content.decode()
+        for hidden in ("Security runs", ">Admin<", "Sign in with GitHub", "Sign out", "/auth/", "/server/"):
+            self.assertNotIn(hidden, page, hidden)
+        self.assertIn(">Scan<", page)
+
+    def test_about_page_lists_only_public_parts(self):
+        r = self.client.get("/about/")
+        self.assertContains(r, "<code>/scan/</code>")
+        self.assertContains(r, "<code>/health/</code>")
+        for hidden in ("<b>pipeline</b>", "<b>accounts</b>", "<b>audit</b>", "tag--role", "tag--staff", "Signed-in operators"):
+            self.assertNotContains(r, hidden)
+
+
 class ScanDeadlineTests(OfflineSourcesMixin, TestCase):
     """A slow source is "timed out", a failing one is "unreachable", and neither is ever "clean"."""
 

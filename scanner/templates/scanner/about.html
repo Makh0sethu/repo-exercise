@@ -6,7 +6,7 @@
 <header class="hero">
   <div>
     <h1 class="iz-title display">About <b>Sentinel</b></h1>
-    <p class="muted">Sentinel checks your dependency files against public vulnerability advisories and collects the latest security news in one place. Signed-in operators can also run security tools against their own Git repositories, and every action there is written to a tamper-evident audit log.</p>
+    <p class="muted">Sentinel checks your dependency files against public vulnerability advisories and collects the latest security news in one place.{% if not public_only %} Signed-in operators can also run security tools against their own Git repositories, and every action there is written to a tamper-evident audit log.{% endif %}</p>
   </div>
 </header>
 
@@ -17,8 +17,8 @@
   </div>
   <ul class="legend" aria-label="Legend">
     <li><span class="tag tag--public">Public</span> anyone</li>
-    <li><span class="tag tag--role">Role</span> signed in with GitHub and given a role</li>
-    <li><span class="tag tag--staff">Staff</span> admins and permitted staff only</li>
+    {% if not public_only %}<li><span class="tag tag--role">Role</span> signed in with GitHub and given a role</li>
+    <li><span class="tag tag--staff">Staff</span> admins and permitted staff only</li>{% endif %}
     <li><span class="tag tag--api">API</span> called by a page, not opened directly</li>
   </ul>
   <ul class="tree" aria-label="Site map">
@@ -35,6 +35,8 @@
           </ul>
         </li>
         <li><span class="node"><a href="{% url 'scanner:about' %}" aria-current="page"><code>/about/</code></a> <b>About</b> <span class="tag tag--public">Public</span><span class="node-note">This page</span></span></li>
+        <li><span class="node"><code>/health/</code> <b>Health check</b> <span class="tag tag--api">API</span><span class="node-note">JSON for uptime monitoring: the app answers and its database is reachable</span></span></li>
+        {% if not public_only %}
         <li><span class="node"><code>/server/</code> <b>Security runs</b> <span class="tag tag--role">Role</span><span class="node-note">Targets and recent runs (operators, auditors, admins)</span></span>
           <ul>
             <li><span class="node"><code>/server/targets/add/</code> <b>Add target</b> <span class="tag tag--role">Role</span><span class="node-note">POST: register a Git repository to scan (operators, admins)</span></span></li>
@@ -55,6 +57,7 @@
           </ul>
         </li>
         <li><span class="node"><b>Admin</b> <span class="tag tag--staff">Staff</span><span class="node-note">Django admin for scan logs, audit events, targets and runs. Its address is set per server and is not listed here.</span></span></li>
+        {% endif %}
         <li><span class="node"><code>/static/</code> <b>Static files</b> <span class="tag tag--public">Public</span><span class="node-note">Styles, scripts and package logos</span></span></li>
       </ul>
     </li>
@@ -64,7 +67,7 @@
 <section class="iz-card panel" aria-labelledby="code-title">
   <div>
     <h2 class="iz-title" id="code-title">Under <b>the hood</b></h2>
-    <p class="muted small">One Django project with four apps. Each app owns its own pages and data.</p>
+    <p class="muted small">{% if public_only %}The parts of Sentinel that run this site.{% else %}One Django project with four apps. Each app owns its own pages and data.{% endif %}</p>
   </div>
   <ul class="tree" aria-label="Code architecture">
     <li><span class="node"><b>config</b><span class="node-note">Settings, root URLs and the WSGI entry point</span></span>
@@ -81,6 +84,7 @@
             <li><span class="node"><code>ScanLog</code> model<span class="node-note">Time, IP and package list per scan, deleted after {{ retention_days }} days</span></span></li>
           </ul>
         </li>
+        {% if not public_only %}
         <li><span class="node"><b>pipeline</b> <code>/server/</code><span class="node-note">Security runs on registered Git targets</span></span>
           <ul>
             <li><span class="node"><code>gitsafe</code><span class="node-note">Validates repository URLs and refs before anything is cloned</span></span></li>
@@ -104,6 +108,7 @@
             <li><span class="node"><code>verify_audit</code> command<span class="node-note">Re-checks the whole chain from the command line</span></span></li>
           </ul>
         </li>
+        {% endif %}
       </ul>
     </li>
   </ul>

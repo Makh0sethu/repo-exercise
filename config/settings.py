@@ -51,7 +51,11 @@ MIDDLEWARE = [
     "scanner.middleware.RateLimitMiddleware",
 ]
 
-ROOT_URLCONF = "config.urls"
+# Public-only mode: just the scanner, results, news and About pages. The admin, sign-in and
+# Security runs are not routed at all (404) and disappear from the nav and the About page.
+# Use it for a public test site: SENTINEL_PUBLIC_ONLY=1.
+SENTINEL_PUBLIC_ONLY = os.environ.get("SENTINEL_PUBLIC_ONLY", "0") == "1"
+ROOT_URLCONF = "config.urls_public" if SENTINEL_PUBLIC_ONLY else "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
 TEMPLATES = [{
@@ -84,7 +88,9 @@ if _DB_NAME:
         "PORT": _db_env("PORT", "5432"),
     }}
 else:
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+    # On a server the code folder is read-only, so point this at a data folder.
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3",
+                             "NAME": Path(os.environ.get("SENTINEL_SQLITE_PATH", BASE_DIR / "db.sqlite3"))}}
 
 # Saved copies of public lookups (advisories, catalogs, news). A small SQLite file of its own,
 # so it survives restarts and is shared by all workers. Uploads are never stored in it.
