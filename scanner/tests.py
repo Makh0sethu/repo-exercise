@@ -535,6 +535,8 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
         self.assertContains(r, 'aria-label="Code architecture"')
         self.assertContains(r, 'aria-label="How a scan travels"')
         self.assertContains(r, 'class="orgchart"')
+        for diagram in ("flow.svg", "site-map-full.svg", "architecture-full.svg"):
+            self.assertContains(r, f"scanner/diagrams/{diagram}")
         for app in ("scanner", "pipeline", "accounts", "audit"):
             self.assertContains(r, f'aria-label="{app} app"')
         for route in ("/scan/", "/parse/", "/results/", "/server/audit/", "/server/runs/&lt;id&gt;/status/", "/auth/github/login/"):
@@ -635,6 +637,9 @@ class PublicOnlyModeTests(TestCase):
             self.assertNotContains(r, hidden)
         self.assertContains(r, 'aria-label="scanner app"')
         self.assertContains(r, 'aria-label="How a scan travels"')
+        self.assertContains(r, "scanner/diagrams/site-map-public.svg")
+        self.assertContains(r, "scanner/diagrams/architecture-public.svg")
+        self.assertNotContains(r, "-full.svg")                                  # the admin parts aren't drawn either
 
 
 @override_settings(FORCE_SCRIPT_NAME="/sentinel", STATIC_URL="/sentinel/static/")

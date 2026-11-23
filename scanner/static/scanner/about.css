@@ -3,14 +3,28 @@
 .about-scene { aspect-ratio: 1200 / 896; }   /* transparent scene, straight on the page */
 .about-scene img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
+/* ---- Diagrams (SVGs from scripts/build_about_diagrams.py; transparent, so they sit on the card) ---- */
+.diagram { margin: 0; }
+.diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diagram-img { display: block; width: 100%; height: auto; }
+/* On narrow screens keep the text a readable size and let the diagram scroll sideways. */
+.diagram-img--flow { min-width: 700px; }
+.diagram-img--map { min-width: 660px; }
+.diagram-img--map-full { min-width: 1040px; }
+.diagram-img--arch { min-width: 760px; }
+.text-version { border-top: 1px solid var(--iz-line); padding-top: 12px; display: flex; flex-direction: column; gap: 16px; }
+.text-version > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--iz-ink-2); width: fit-content; }
+.text-version[open] > summary { margin-bottom: 14px; }
+
 /* Access tags (legend and node stripes share the colours) */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--iz-ink-2); }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }
 .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
-.tag--public, .node--public { --acc: var(--iz-teal); }
-.tag--role, .node--role { --acc: var(--iz-blue); }
-.tag--staff, .node--staff { --acc: var(--iz-orange); }
-.tag--api, .node--api { --acc: var(--iz-purple); }
+/* Same colours as the diagrams' legend (scripts/build_about_diagrams.py ACCESS). */
+.tag--public, .node--public { --acc: #5C7A6B; }
+.tag--role, .node--role { --acc: #2F5E8C; }
+.tag--staff, .node--staff { --acc: #C99754; }
+.tag--api, .node--api { --acc: #B1643E; }
 .tag { background: color-mix(in srgb, var(--acc) 18%, var(--iz-card)); color: color-mix(in srgb, var(--acc) 55%, var(--iz-ink)); }
 
 /* ---- Flow: a row of steps with arrows; a column on narrow screens ---- */

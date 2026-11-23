@@ -16,6 +16,8 @@
     <h2 class="iz-title" id="flow-title">How a scan <b>travels</b></h2>
     <p class="muted small">From your browser to the sources and back, and what is kept along the way.</p>
   </div>
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--flow" src="{% static 'scanner/diagrams/flow.svg' %}" alt="Diagram: your file goes from your browser through Cloudflare and nginx to Sentinel, which asks six public sources at once; results come back to your browser only. Your file is never stored, results stay in your session, the scan log is deleted after {{ retention_days }} days, and a public cache keeps advisory records and news feeds." decoding="async"></div></figure>
+  <details class="text-version"><summary>Text version</summary>
   <ol class="flow" aria-label="How a scan travels">
     <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-teal)"></span><b>You</b><span>Upload or paste a dependency file</span></li>
     <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-orange)"></span><b>Cloudflare</b><span>Encrypts the connection and absorbs attacks</span></li>
@@ -29,6 +31,7 @@
     <li><span class="store-mark" aria-hidden="true"></span><b>Scan log</b><span>Time, IP address and package list, deleted after {{ retention_days }} days</span></li>
     <li><span class="store-mark" aria-hidden="true"></span><b>Public cache</b><span>Advisory records and news feeds, so repeat scans are fast</span></li>
   </ul>
+  </details>
 </section>
 
 <section class="iz-card panel" aria-labelledby="sitemap-title">
@@ -36,6 +39,12 @@
     <h2 class="iz-title" id="sitemap-title">Site <b>map</b></h2>
     <p class="muted small">Every page and endpoint, and who can open it.</p>
   </div>
+  {% if public_only %}
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map" src="{% static 'scanner/diagrams/site-map-public.svg' %}" alt="Diagram: Home links to Scan (with Detected packages), Results (with each scan result), About, Health check and Static files." decoding="async"></div></figure>
+  {% else %}
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map-full" src="{% static 'scanner/diagrams/site-map-full.svg' %}" alt="Diagram: Home links to Scan, Results, About, Health check, Security runs (add target, start run, run detail, run status, audit trail), Sign-in (sign in, callback, sign out), Admin and Static files, coloured by who can open each." decoding="async"></div></figure>
+  {% endif %}
+  <details class="text-version"><summary>Text version</summary>
   <ul class="legend" aria-label="Legend">
     <li><span class="tag tag--public">Public</span> anyone</li>
     {% if not public_only %}<li><span class="tag tag--role">Role</span> signed in with GitHub and given a role</li>
@@ -81,6 +90,7 @@
       </ul>
     </li>
   </ul>
+  </details>
 </section>
 
 <section class="iz-card panel" aria-labelledby="code-title">
@@ -88,6 +98,12 @@
     <h2 class="iz-title" id="code-title">Under <b>the hood</b></h2>
     <p class="muted small">{% if public_only %}The parts of Sentinel that run this site.{% else %}One Django project with four apps. Each app owns its own pages and data.{% endif %}</p>
   </div>
+  {% if public_only %}
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-public.svg' %}" alt="Diagram: the scanner app inside one Django project, with its modules; it asks six public sources, saves public data in a cache file, and writes scan logs and sessions to the database." decoding="async"></div></figure>
+  {% else %}
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-full.svg' %}" alt="Diagram: one Django project with four apps (scanner, pipeline, accounts, audit) and their modules. The scanner asks six public sources and keeps a public cache; the pipeline runs security tools and clones from GitHub; accounts signs in with GitHub; audit files evidence by SHA-256; all write to one database." decoding="async"></div></figure>
+  {% endif %}
+  <details class="text-version"><summary>Text version</summary>
   <div class="arch" role="group" aria-label="Code architecture">
     <div class="arch-project">
       <p class="arch-head"><b>config</b><span>Settings, root URLs and the WSGI entry point</span></p>
@@ -136,5 +152,6 @@
       </div>
     </div>
   </div>
+  </details>
 </section>
 {% endblock %}
