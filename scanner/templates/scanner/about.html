@@ -1,0 +1,111 @@
+{% extends "scanner/base.html" %}
+{% block title %}Sentinel: about and site architecture{% endblock %}
+{% block body_class %}about{% endblock %}
+{% block head %}{% load static %}<link rel="stylesheet" href="{% static 'scanner/about.css' %}">{% endblock %}
+{% block content %}
+<header class="hero">
+  <div>
+    <h1 class="iz-title display">About <b>Sentinel</b></h1>
+    <p class="muted">Sentinel checks your dependency files against public vulnerability advisories and collects the latest security news in one place. Signed-in operators can also run security tools against their own Git repositories, and every action there is written to a tamper-evident audit log.</p>
+  </div>
+</header>
+
+<section class="iz-card panel" aria-labelledby="sitemap-title">
+  <div>
+    <h2 class="iz-title" id="sitemap-title">Site <b>map</b></h2>
+    <p class="muted small">Every page and endpoint, and who can open it.</p>
+  </div>
+  <ul class="legend" aria-label="Legend">
+    <li><span class="tag tag--public">Public</span> anyone</li>
+    <li><span class="tag tag--role">Role</span> signed in with GitHub and given a role</li>
+    <li><span class="tag tag--staff">Staff</span> admins and permitted staff only</li>
+    <li><span class="tag tag--api">API</span> called by a page, not opened directly</li>
+  </ul>
+  <ul class="tree" aria-label="Site map">
+    <li><span class="node"><a href="{% url 'scanner:home' %}"><code>/</code></a> <b>Home</b> <span class="tag tag--public">Public</span><span class="node-note">What Sentinel does, then the latest security news and official reports</span></span>
+      <ul>
+        <li><span class="node"><a href="{% url 'scanner:scan' %}"><code>/scan/</code></a> <b>Scan</b> <span class="tag tag--public">Public</span><span class="node-note">GET shows the upload form; POST runs the scan and redirects to the result</span></span>
+          <ul>
+            <li><span class="node"><code>/parse/</code> <b>Detected packages</b> <span class="tag tag--api">API</span><span class="node-note">POST, returns JSON: the packages found before you scan</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><a href="{% url 'scanner:results' %}"><code>/results/</code></a> <b>Results</b> <span class="tag tag--public">Public</span><span class="node-note">Your recent scans, kept only for this browser session</span></span>
+          <ul>
+            <li><span class="node"><code>/results/&lt;id&gt;/</code> <b>Scan result</b> <span class="tag tag--public">Public</span><span class="node-note">Findings by package, the sources behind them, severity and the upgrades that fix them</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><a href="{% url 'scanner:about' %}" aria-current="page"><code>/about/</code></a> <b>About</b> <span class="tag tag--public">Public</span><span class="node-note">This page</span></span></li>
+        <li><span class="node"><code>/server/</code> <b>Security runs</b> <span class="tag tag--role">Role</span><span class="node-note">Targets and recent runs (operators, auditors, admins)</span></span>
+          <ul>
+            <li><span class="node"><code>/server/targets/add/</code> <b>Add target</b> <span class="tag tag--role">Role</span><span class="node-note">POST: register a Git repository to scan (operators, admins)</span></span></li>
+            <li><span class="node"><code>/server/start/</code> <b>Start run</b> <span class="tag tag--role">Role</span><span class="node-note">POST: run the security pipeline against a target (operators, admins)</span></span></li>
+            <li><span class="node"><code>/server/runs/&lt;id&gt;/</code> <b>Run detail</b> <span class="tag tag--role">Role</span><span class="node-note">Each step, its captured output and the findings</span></span>
+              <ul>
+                <li><span class="node"><code>/server/runs/&lt;id&gt;/status/</code> <b>Run status</b> <span class="tag tag--api">API</span><span class="node-note">JSON polled by the run page until the run finishes</span></span></li>
+              </ul>
+            </li>
+            <li><span class="node"><code>/server/audit/</code> <b>Audit trail</b> <span class="tag tag--role">Role</span><span class="node-note">The hash-chained audit log, verified each time it is opened (auditors, admins)</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><code>/auth/</code> <b>Sign-in</b><span class="node-note">GitHub sign-in; only listed GitHub accounts get a role</span></span>
+          <ul>
+            <li><span class="node"><code>/auth/github/login/</code> <b>Sign in with GitHub</b> <span class="tag tag--public">Public</span></span></li>
+            <li><span class="node"><code>/auth/github/callback/</code> <b>GitHub callback</b> <span class="tag tag--api">API</span><span class="node-note">GitHub sends you back here after you approve</span></span></li>
+            <li><span class="node"><code>/auth/logout/</code> <b>Sign out</b> <span class="tag tag--role">Role</span><span class="node-note">POST; also clears your session results</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><b>Admin</b> <span class="tag tag--staff">Staff</span><span class="node-note">Django admin for scan logs, audit events, targets and runs. Its address is set per server and is not listed here.</span></span></li>
+        <li><span class="node"><code>/static/</code> <b>Static files</b> <span class="tag tag--public">Public</span><span class="node-note">Styles, scripts and package logos</span></span></li>
+      </ul>
+    </li>
+  </ul>
+</section>
+
+<section class="iz-card panel" aria-labelledby="code-title">
+  <div>
+    <h2 class="iz-title" id="code-title">Under <b>the hood</b></h2>
+    <p class="muted small">One Django project with four apps. Each app owns its own pages and data.</p>
+  </div>
+  <ul class="tree" aria-label="Code architecture">
+    <li><span class="node"><b>config</b><span class="node-note">Settings, root URLs and the WSGI entry point</span></span>
+      <ul>
+        <li><span class="node"><b>scanner</b> <code>/</code><span class="node-note">Dependency scanner, news and the public site</span></span>
+          <ul>
+            <li><span class="node"><code>parsers</code><span class="node-note">Reads requirements.txt, pyproject.toml, package.json and lockfiles</span></span></li>
+            <li><span class="node"><code>scan</code> · <code>sources</code> · <code>versions</code><span class="node-note">Asks all six sources at once, merges duplicates, and matches exact versions and ranges</span></span></li>
+            <li><span class="node"><code>triage</code><span class="node-note">Sorts findings into confirmed, possible and already fixed; exploited and malicious first</span></span></li>
+            <li><span class="node"><code>news</code> · <code>headlines</code><span class="node-note">RSS feeds, CVE matching, the newsroom and the ticker</span></span></li>
+            <li><span class="node"><code>http_client</code> · <code>store</code><span class="node-note">Outbound requests, and the cache of public lookups (never your uploads)</span></span></li>
+            <li><span class="node"><code>history</code><span class="node-note">Session-only result history</span></span></li>
+            <li><span class="node"><code>middleware</code><span class="node-note">Request tracing, security headers, rate limiting and no-store caching</span></span></li>
+            <li><span class="node"><code>ScanLog</code> model<span class="node-note">Time, IP and package list per scan, deleted after {{ retention_days }} days</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><b>pipeline</b> <code>/server/</code><span class="node-note">Security runs on registered Git targets</span></span>
+          <ul>
+            <li><span class="node"><code>gitsafe</code><span class="node-note">Validates repository URLs and refs before anything is cloned</span></span></li>
+            <li><span class="node"><code>runner</code> · <code>jobs</code> · <code>adapters</code><span class="node-note">Runs each tool step in the background and parses its output</span></span></li>
+            <li><span class="node"><code>bugchecks</code> · <code>osvlocal</code><span class="node-note">Built-in bug checks and the offline OSV database</span></span></li>
+            <li><span class="node"><code>access</code><span class="node-note">Permission checks for every pipeline page</span></span></li>
+            <li><span class="node"><code>Target</code> · <code>Run</code> · <code>Step</code> · <code>Finding</code> models</span></li>
+          </ul>
+        </li>
+        <li><span class="node"><b>accounts</b> <code>/auth/</code><span class="node-note">GitHub sign-in and roles</span></span>
+          <ul>
+            <li><span class="node"><code>github</code><span class="node-note">The OAuth sign-in flow</span></span></li>
+            <li><span class="node"><code>roles</code> · <code>identity</code><span class="node-note">Maps listed GitHub logins to operator, auditor or admin; anyone else is refused</span></span></li>
+            <li><span class="node"><code>middleware</code><span class="node-note">Signs out anyone removed from the list on their very next request</span></span></li>
+          </ul>
+        </li>
+        <li><span class="node"><b>audit</b><span class="node-note">Tamper-evident record of what happened</span></span>
+          <ul>
+            <li><span class="node"><code>log</code><span class="node-note">Appends hash-chained events and stores evidence by its SHA-256</span></span></li>
+            <li><span class="node"><code>AuditEvent</code> · <code>EvidenceArtifact</code> models</span></li>
+            <li><span class="node"><code>verify_audit</code> command<span class="node-note">Re-checks the whole chain from the command line</span></span></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</section>
+{% endblock %}

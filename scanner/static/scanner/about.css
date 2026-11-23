@@ -1,0 +1,27 @@
+/* About page: site map and code architecture trees. Built on izitho-m3.css tokens. */
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--iz-ink-2); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.tag--public { background: color-mix(in srgb, var(--iz-teal) 18%, var(--iz-card)); color: color-mix(in srgb, var(--iz-teal) 55%, var(--iz-ink)); }
+.tag--role { background: color-mix(in srgb, var(--iz-blue) 18%, var(--iz-card)); color: color-mix(in srgb, var(--iz-blue) 55%, var(--iz-ink)); }
+.tag--staff { background: color-mix(in srgb, var(--iz-orange) 20%, var(--iz-card)); color: color-mix(in srgb, var(--iz-orange) 45%, var(--iz-ink)); }
+.tag--api { background: color-mix(in srgb, var(--iz-purple) 16%, var(--iz-card)); color: color-mix(in srgb, var(--iz-purple) 55%, var(--iz-ink)); }
+
+/* Nested lists drawn as a tree: a vertical rail per level, a short branch per item. */
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 10px; padding-left: 20px; border-left: 2px solid var(--iz-line); }
+.tree li { position: relative; padding: 6px 0; }
+.tree ul > li::before { content: ""; position: absolute; left: -22px; top: 17px; width: 16px; border-top: 2px solid var(--iz-line); }
+.tree ul > li:last-child::after { content: ""; position: absolute; left: -22px; top: 19px; bottom: 0; width: 2px; background: var(--iz-card); }
+.tree .node { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.tree .node code { font-size: 13px; overflow-wrap: anywhere; }
+.tree .node a { color: var(--iz-link); text-decoration: none; }
+.tree .node a:hover, .tree .node a:focus-visible { text-decoration: underline; }
+.tree .node-note { flex-basis: 100%; font-size: 13px; color: var(--iz-ink-2); }
+
+@media (max-width: 560px) {
+  .tree ul { margin-left: 4px; padding-left: 14px; }
+  .tree ul > li::before { left: -16px; width: 10px; }
+  .tree ul > li:last-child::after { left: -16px; }
+}

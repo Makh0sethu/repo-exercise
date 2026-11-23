@@ -158,3 +158,9 @@ def result_page(request, rid):
 def results_list(request):
     return render(request, "scanner/results_list.html", {"items": history.recent(request)})
 
+
+@require_GET
+def about(request):
+    """What Sentinel is, with the full site map and code architecture."""
+    return render(request, "scanner/about.html")
+
