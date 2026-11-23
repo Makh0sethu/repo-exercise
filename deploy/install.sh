@@ -70,12 +70,82 @@ systemctl enable --now $NAME.service $NAME-maintenance.timer
 systemctl restart $NAME.service
 
 echo "=== local health check ==="
+HOSTHDR=$(grep '^DJANGO_ALLOWED_HOSTS=' "$ETC/env" | cut -d= -f2 | cut -d, -f1)
 ok=""
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS -H "Host: $DOMAIN" -H "X-Forwarded-Proto: https" "http://127.0.0.1:$PORT/health/"; then ok=1; echo; break; fi
+  if curl -fsS -H "Host: $HOSTHDR" -H "X-Forwarded-Proto: https" "http://127.0.0.1:$PORT/health/"; then ok=1; echo; break; fi
   sleep 1
 done
 [ -n "$ok" ] || { echo "the app did not answer on 127.0.0.1:$PORT. See: journalctl -u $NAME -n 50"; exit 1; }
+
+echo "=== nginx: shared pieces ==="
+# Backups of the main site / Sentinel vhost are only valid for this run: never restore an older copy
+# over changes made since (the main site's config belongs to more than this app).
+rm -f "$BACKUPS/main-site.bak" "$BACKUPS/nginx-site.bak"
+[ -f /etc/nginx/conf.d/cloudflare-realip.conf ] || echo "WARNING: /etc/nginx/conf.d/cloudflare-realip.conf is missing, so visitor IPs will be Cloudflare's"
+for f in /etc/nginx/conf.d/$NAME-zones.conf /etc/nginx/snippets/$NAME-proxy.conf /etc/nginx/snippets/$NAME-path.conf; do
+  [ -f "$f" ] && cp "$f" "$BACKUPS/$(basename "$f").bak"
+done
+install -m 644 "$APP/deploy/$NAME-zones.nginx.conf" /etc/nginx/conf.d/$NAME-zones.conf
+install -m 644 "$APP/deploy/$NAME-proxy.nginx.conf" /etc/nginx/snippets/$NAME-proxy.conf
+install -m 644 "$APP/deploy/$NAME-path.nginx.conf" /etc/nginx/snippets/$NAME-path.conf
+
+restore_nginx() {
+  echo "nginx -t failed; restoring the previous config"
+  for f in /etc/nginx/conf.d/$NAME-zones.conf /etc/nginx/snippets/$NAME-proxy.conf /etc/nginx/snippets/$NAME-path.conf; do
+    if [ -f "$BACKUPS/$(basename "$f").bak" ]; then cp "$BACKUPS/$(basename "$f").bak" "$f"; else rm -f "$f"; fi
+  done
+  [ -f "$BACKUPS/main-site.bak" ] && cp "$BACKUPS/main-site.bak" "$MAIN_SITE"
+  if [ -f "$BACKUPS/nginx-site.bak" ]; then cp "$BACKUPS/nginx-site.bak" "$SITE"; elif [ -n "${NEW_SITE:-}" ]; then rm -f "$SITE" "/etc/nginx/sites-enabled/$DOMAIN"; fi
+  nginx -t && systemctl reload nginx
+  exit 1
+}
+
+# Mode comes from the env file: SENTINEL_URL_PREFIX=/sentinel serves it at uhambo.co.zw/sentinel/
+# (no DNS needed); empty serves it on its own subdomain.
+PREFIX=$(grep '^SENTINEL_URL_PREFIX=' "$ETC/env" | cut -d= -f2 | tr -d '[:space:]')
+MAIN_SITE=/etc/nginx/sites-available/uhambo.co.zw
+INCLUDE_LINE="include snippets/$NAME-path.conf;"
+
+if [ -n "$PREFIX" ]; then
+  [ "$PREFIX" = "/sentinel" ] || { echo "nginx snippet is written for /sentinel, but the env file says $PREFIX"; exit 1; }
+  echo "=== nginx: path mode, https://uhambo.co.zw$PREFIX/ ==="
+  if ! grep -qF "$INCLUDE_LINE" "$MAIN_SITE"; then
+    cp "$MAIN_SITE" "$BACKUPS/main-site.bak"
+    cp "$MAIN_SITE" "$MAIN_SITE.bak-$(date +%F-%H%M%S)"
+    # Insert the include before the first "location / {" in the 443 server block (as uhambo-backend does).
+    python3 - "$MAIN_SITE" "$INCLUDE_LINE" <<'PY'
+import re, sys
+path, line = sys.argv[1], sys.argv[2]
+text = open(path).read()
+m443 = re.search(r"listen\s+(\[::\]:)?443", text)
+if not m443:
+    sys.exit("no 443 server block found")
+loc = re.search(r"^(\s*)location\s+/\s*\{", text[m443.end():], re.M)
+if not loc:
+    sys.exit("no 'location / {' after the 443 listen line")
+i = m443.end() + loc.start()
+indent = loc.group(1).lstrip("\n")
+text = text[:i] + f"\n{indent}{line}\n" + text[i:]
+open(path, "w").write(text)
+PY
+  fi
+  if nginx -t; then systemctl reload nginx; else restore_nginx; fi
+  echo "=== checks ==="
+  systemctl --no-pager --lines=0 status $NAME.service | head -5
+  ss -tlnp | grep ":$PORT " || true
+  systemctl list-timers --no-pager "$NAME-*"
+  echo "done: https://uhambo.co.zw$PREFIX/"
+  exit 0
+fi
+
+echo "=== nginx: subdomain mode, https://$DOMAIN/ ==="
+if grep -qF "$INCLUDE_LINE" "$MAIN_SITE"; then
+  # Moving off the temporary path: take the include out of the main site.
+  cp "$MAIN_SITE" "$BACKUPS/main-site.bak"
+  cp "$MAIN_SITE" "$MAIN_SITE.bak-$(date +%F-%H%M%S)"
+  grep -vF "$INCLUDE_LINE" "$BACKUPS/main-site.bak" > "$MAIN_SITE"
+fi
 
 echo "=== TLS certificate ==="
 if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
@@ -84,22 +154,11 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     || { echo "certbot failed. Check the DNS record for $DOMAIN (proxied A record), then re-run. The app is installed; nginx is unchanged."; exit 1; }
 fi
 
-echo "=== nginx ==="
-[ -f /etc/nginx/conf.d/cloudflare-realip.conf ] || echo "WARNING: /etc/nginx/conf.d/cloudflare-realip.conf is missing, so visitor IPs will be Cloudflare's"
-[ -f "$SITE" ] && cp "$SITE" "$BACKUPS/nginx-site.bak"
-[ -f /etc/nginx/snippets/$NAME-proxy.conf ] && cp /etc/nginx/snippets/$NAME-proxy.conf "$BACKUPS/nginx-proxy.bak"
-install -m 644 "$APP/deploy/$NAME-proxy.nginx.conf" /etc/nginx/snippets/$NAME-proxy.conf
+echo "=== nginx: site ==="
+if [ -f "$SITE" ]; then cp "$SITE" "$BACKUPS/nginx-site.bak"; else NEW_SITE=1; fi
 install -m 644 "$APP/deploy/$DOMAIN.nginx.conf" "$SITE"
 ln -sf "$SITE" "/etc/nginx/sites-enabled/$DOMAIN"
-if nginx -t; then
-  systemctl reload nginx
-else
-  echo "nginx -t failed; restoring the previous config"
-  if [ -f "$BACKUPS/nginx-site.bak" ]; then cp "$BACKUPS/nginx-site.bak" "$SITE"; else rm -f "/etc/nginx/sites-enabled/$DOMAIN"; fi
-  [ -f "$BACKUPS/nginx-proxy.bak" ] && cp "$BACKUPS/nginx-proxy.bak" /etc/nginx/snippets/$NAME-proxy.conf
-  nginx -t && systemctl reload nginx
-  exit 1
-fi
+if nginx -t; then systemctl reload nginx; else restore_nginx; fi
 
 echo "=== checks ==="
 systemctl --no-pager --lines=0 status $NAME.service | head -5

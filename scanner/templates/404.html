@@ -4,6 +4,6 @@
 <div class="iz-card panel">
   <h1 class="iz-title">Page <b>not found</b></h1>
   <p class="muted">{{ exception|default:"That page doesn't exist." }}</p>
-  <p class="actions"><a class="back" href="/" data-back>← Go back</a> <md-filled-button href="/">Start a new scan</md-filled-button></p>
+  <p class="actions"><a class="back" href="{% url 'scanner:home' %}" data-back>← Go back</a> <md-filled-button href="{% url 'scanner:scan' %}">Start a new scan</md-filled-button></p>
 </div>
 {% endblock %}

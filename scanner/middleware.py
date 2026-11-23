@@ -115,8 +115,9 @@ class RateLimitMiddleware:
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         if request.method == "POST":
-            limit = self._limit_for_path(request.path)
-            if limit and not self._allow(getattr(request, "client_ip", None) or client_ip(request), request.path, limit):
+            # path_info: the address without any URL prefix (/sentinel), so a prefix can't dodge the limit.
+            limit = self._limit_for_path(request.path_info)
+            if limit and not self._allow(getattr(request, "client_ip", None) or client_ip(request), request.path_info, limit):
                 return self._too_many_requests(request)
         return self.get_response(request)
 
@@ -136,7 +137,7 @@ class RateLimitMiddleware:
 
     def _too_many_requests(self, request: HttpRequest) -> HttpResponse:
         msg = "Too many requests. Please wait a minute before scanning again."
-        if request.path.rstrip("/") == "/parse":
+        if request.path_info.rstrip("/") == "/parse":
             resp: HttpResponse = JsonResponse({"error": msg}, status=429)
         else:
             resp = render(request, "scanner/scan.html", {"error": msg}, status=429)

@@ -12,7 +12,7 @@ def _active(path, url, exact=False):
 
 def sentinel(request):
     user = getattr(request, "user", None)
-    path = request.path
+    path = request.path_info   # without the SENTINEL_URL_PREFIX, so the checks below work under a prefix too
     signed_in = bool(user and user.is_authenticated)
     items = [
         {"label": "Home", "url": reverse("scanner:home"), "active": path == "/"},

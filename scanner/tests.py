@@ -629,6 +629,45 @@ class PublicOnlyModeTests(TestCase):
             self.assertNotContains(r, hidden)
 
 
+@override_settings(FORCE_SCRIPT_NAME="/sentinel", STATIC_URL="/sentinel/static/")
+class UrlPrefixTests(TestCase):
+    """Served at uhambo.co.zw/sentinel/ (SENTINEL_URL_PREFIX=/sentinel): nginx strips /sentinel, so Django
+    gets /scan/ and FORCE_SCRIPT_NAME puts the prefix back into every link it builds."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def _wsgi_get(self, path):
+        """Through Django's real WSGI handler, which (unlike the test client) sets the URL prefix."""
+        from django.core.handlers.wsgi import WSGIHandler
+        from django.test import RequestFactory
+        from django.urls import get_script_prefix, set_script_prefix
+        environ = RequestFactory().get(path).environ
+        status, before = [], get_script_prefix()
+        try:
+            body = b"".join(WSGIHandler()(environ, lambda s, h, *a: status.append(s)))
+        finally:
+            set_script_prefix(before)   # the prefix is per thread: don't leak it into later tests
+        return status[0], body.decode()
+
+    def test_links_static_files_and_active_nav_carry_the_prefix(self):
+        status, page = self._wsgi_get("/scan/")
+        self.assertTrue(status.startswith("200"), status)
+        self.assertIn('action="/sentinel/scan/"', page)
+        self.assertIn('data-preview="/sentinel/parse/"', page)
+        self.assertIn('href="/sentinel/about/"', page)
+        self.assertIn('/sentinel/static/scanner/app.css', page)
+        self.assertRegex(page, r'href="/sentinel/scan/" class="nav-link is-active"')
+
+    @override_settings(SENTINEL_RATE_LIMIT=1)
+    def test_rate_limit_still_applies_under_a_prefix(self):
+        self.client.post("/scan/", {"pasted": ""})
+        r = self.client.post("/scan/", {"pasted": ""})
+        self.assertEqual(r.wsgi_request.path, "/sentinel/scan/")              # what used to dodge the limit
+        self.assertEqual(r.status_code, 429)
+
+
 class ScanDeadlineTests(OfflineSourcesMixin, TestCase):
     """A slow source is "timed out", a failing one is "unreachable", and neither is ever "clean"."""
 

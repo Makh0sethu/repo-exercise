@@ -169,7 +169,14 @@ LOGGING = {
     },
 }
 
-STATIC_URL = "static/"
+# Serving Sentinel under a path of another site (e.g. uhambo.co.zw/sentinel/): set SENTINEL_URL_PREFIX=/sentinel
+# and have the proxy strip it (nginx: location ^~ /sentinel/ { proxy_pass http://127.0.0.1:8101/; }).
+# Links, static files and cookies then all carry the prefix; the app itself still sees /scan/ etc.
+SENTINEL_URL_PREFIX = "/" + os.environ.get("SENTINEL_URL_PREFIX", "").strip("/") if os.environ.get("SENTINEL_URL_PREFIX", "").strip("/") else ""
+if SENTINEL_URL_PREFIX:
+    FORCE_SCRIPT_NAME = SENTINEL_URL_PREFIX
+    SESSION_COOKIE_PATH = CSRF_COOKIE_PATH = SENTINEL_URL_PREFIX + "/"   # never touch the host site's cookies
+STATIC_URL = SENTINEL_URL_PREFIX + "/static/" if SENTINEL_URL_PREFIX else "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 if _HAS_WHITENOISE and not DEBUG:
     STORAGES = {

@@ -6,7 +6,9 @@
 #
 # To take the site offline completely instead:
 #   sudo systemctl disable --now sentinel sentinel-maintenance.timer
-#   sudo rm /etc/nginx/sites-enabled/sentinel.uhambo.co.zw && sudo nginx -t && sudo systemctl reload nginx
+#   path mode:      sudo sed -i '/include snippets\/sentinel-path.conf;/d' /etc/nginx/sites-available/uhambo.co.zw
+#   subdomain mode: sudo rm /etc/nginx/sites-enabled/sentinel.uhambo.co.zw
+#   then:           sudo nginx -t && sudo systemctl reload nginx
 set -euo pipefail
 
 NAME=sentinel
@@ -33,9 +35,10 @@ chmod -R u=rwX,go=rX "$APP"
 chmod -R go=rX "$APP/staticfiles"
 systemctl restart $NAME.service
 
-echo "=== nginx ==="
-[ -f "$BACKUPS/nginx-site.bak" ] && cp "$BACKUPS/nginx-site.bak" /etc/nginx/sites-available/$DOMAIN
-[ -f "$BACKUPS/nginx-proxy.bak" ] && cp "$BACKUPS/nginx-proxy.bak" /etc/nginx/snippets/$NAME-proxy.conf
+echo "=== nginx (Sentinel's own files only; the main site's config is never touched here) ==="
+for f in /etc/nginx/conf.d/$NAME-zones.conf /etc/nginx/snippets/$NAME-proxy.conf /etc/nginx/snippets/$NAME-path.conf; do
+  if [ -f "$BACKUPS/$(basename "$f").bak" ]; then cp "$BACKUPS/$(basename "$f").bak" "$f"; fi
+done
 nginx -t && systemctl reload nginx
 
 sleep 2
