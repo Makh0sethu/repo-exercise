@@ -5,7 +5,7 @@
 .carousel { position: relative; padding: 0; overflow: hidden; }
 .carousel-viewport { overflow: hidden; border-radius: var(--iz-radius-card); }
 .carousel-track { display: flex; transition: transform .6s cubic-bezier(.2, .7, .2, 1); will-change: transform; }
-.slide { flex: 0 0 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: center; gap: 24px; padding: 44px 48px 80px; --accent: var(--iz-blue); background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 16%, var(--iz-card)) 0%, var(--iz-card) 62%); }
+.slide { flex: 0 0 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); align-items: center; gap: 32px; padding: 40px 40px 80px; --accent: var(--iz-blue); background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 16%, var(--iz-card)) 0%, var(--iz-card) 62%); }
 .slide--blue { --accent: var(--iz-blue); }
 .slide--purple { --accent: var(--iz-purple); }
 .slide--teal { --accent: var(--iz-teal); }
@@ -16,7 +16,11 @@
 .slide-title { font-size: clamp(26px, 4.2vw, 40px); line-height: 1.12; letter-spacing: -.5px; margin: 8px 0 12px; color: var(--iz-ink); max-width: 20ch; }
 .slide-text p { margin: 0; max-width: 58ch; color: var(--iz-ink-2); font-size: 16px; }
 .slide-cta { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; }
-.slide-art { width: 100%; max-width: 220px; justify-self: center; color: var(--accent); opacity: .9; }
+/* Animated character scenes, copied from uhambo-website public/presentation-designs/projects/sentinel/
+   (built there by scripts/presentation/build_sentinel_scenes.py from the Uhambo avatar cast).
+   The image shows its still frame (#still) until app.js plays the slide that is on screen. */
+.slide-scene { width: 100%; aspect-ratio: 1200 / 896; }   /* transparent scene, straight on the slide's gradient */
+.slide-scene img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .carousel-controls { position: absolute; left: 48px; right: 48px; bottom: 22px; display: flex; align-items: center; gap: 10px; }
 .carousel-btn { width: 40px; height: 40px; border: 0; border-radius: 50%; cursor: pointer; color: var(--iz-ink); display: inline-grid; place-items: center; }
 .carousel-btn:focus-visible, .carousel-dots button:focus-visible, .ticker a:focus-visible, .ticker-pause:focus-visible { outline: 3px solid var(--iz-blue); outline-offset: 2px; }
@@ -27,8 +31,8 @@
 .carousel-dots button { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 999px; background: var(--iz-ink-2); opacity: .35; cursor: pointer; transition: width .3s, opacity .3s; }
 .carousel-dots button[aria-current="true"] { width: 28px; opacity: 1; background: var(--iz-ink); }
 @media (max-width: 720px) {
-  .slide { grid-template-columns: 1fr; padding: 28px 20px 80px; }
-  .slide-art { display: none; }
+  .slide { grid-template-columns: 1fr; padding: 20px 20px 80px; gap: 18px; align-content: start; }
+  .slide-scene { order: -1; }
   .carousel-controls { left: 20px; right: 20px; }
 }
 

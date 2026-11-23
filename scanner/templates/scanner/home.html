@@ -2,7 +2,7 @@
 {% block title %}Sentinel: dependency security and the latest security news{% endblock %}
 {% block body_class %}home{% endblock %}
 {% block head %}{% load static %}<link rel="stylesheet" href="{% static 'scanner/home.css' %}">{% endblock %}
-{% block content %}
+{% block content %}{% load static %}
 
 <section class="carousel iz-card" aria-roledescription="carousel" aria-label="What Sentinel does" data-carousel>
   <div class="carousel-viewport">
@@ -15,7 +15,7 @@
           <p>Drop in <code>requirements.txt</code>, <code>pyproject.toml</code>, <code>package.json</code> or a lockfile. Sentinel checks every package against public advisories in seconds. Nothing you upload is stored.</p>
           <div class="slide-cta"><md-filled-button href="{% url 'scanner:scan' %}">Scan dependencies</md-filled-button></div>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><rect x="40" y="18" width="96" height="124" rx="12" fill="none" stroke="currentColor" stroke-width="5"/><path d="M60 50h56M60 72h56M60 94h34" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="138" cy="112" r="26" fill="none" stroke="currentColor" stroke-width="6"/><path d="M157 131l20 20" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/01-scan-in-seconds.svg' %}#still" data-scene="{% static 'scanner/scenes/01-scan-in-seconds.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
       <article class="slide slide--purple" role="group" aria-roledescription="slide" aria-label="2 of 6">
@@ -24,7 +24,7 @@
           <h2 class="slide-title">OSV.dev, CISA KEV, RetireJS, NVD, CVE.org and the news</h2>
           <p>All six are asked at once. Duplicates are merged, and every finding shows which sources back it and how each one rated it.</p>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><circle cx="100" cy="80" r="22" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="5"><circle cx="100" cy="22" r="12"/><circle cx="150" cy="51" r="12"/><circle cx="150" cy="109" r="12"/><circle cx="100" cy="138" r="12"/><circle cx="50" cy="109" r="12"/><circle cx="50" cy="51" r="12"/><path d="M100 34v24M140 57l-21 12M140 103l-21-12M100 126v-24M60 103l21-12M60 57l21 12"/></g></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/02-six-sources.svg' %}#still" data-scene="{% static 'scanner/scenes/02-six-sources.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
       <article class="slide slide--teal" role="group" aria-roledescription="slide" aria-label="3 of 6">
@@ -33,7 +33,7 @@
           <h2 class="slide-title">Confirmed, possible, or not your problem</h2>
           <p>Exact versions are confirmed. Ranges like <code>&gt;=5.2</code> only show advisories that can reach them, and old bugs a plain update already fixes are counted separately. In our own tests that cut 719 alerts to 83.</p>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M20 24h160l-58 62v44l-44 18V86z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M78 56h44" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/06-signal-not-noise.svg' %}#still" data-scene="{% static 'scanner/scenes/06-signal-not-noise.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
       <article class="slide slide--red" role="group" aria-roledescription="slide" aria-label="4 of 6">
@@ -42,7 +42,7 @@
           <h2 class="slide-title">Exploited bugs and malware rise to the top</h2>
           <p>Anything on CISA's Known Exploited list or flagged as malicious code is never buried. A single table tells you which upgrade clears the most findings.</p>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M100 14c8 26 40 36 40 74a40 40 0 0 1-80 0c0-16 8-26 16-34 0 16 8 24 16 24 0-30-8-46 8-64z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/03-fix-first.svg' %}#still" data-scene="{% static 'scanner/scenes/03-fix-first.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
       <article class="slide slide--orange" role="group" aria-roledescription="slide" aria-label="5 of 6">
@@ -52,7 +52,7 @@
           <p>CISA advisories and vendor bulletins sit in their own lane. News that names a CVE you actually have is marked, so a story about your stack never gets lost in the feed.</p>
           <div class="slide-cta"><md-outlined-button href="#latest">Read the latest</md-outlined-button></div>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><rect x="22" y="24" width="112" height="112" rx="10" fill="none" stroke="currentColor" stroke-width="5"/><path d="M40 52h76M40 74h76M40 96h48" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M134 46h30a12 12 0 0 1 12 12v66a12 12 0 0 1-24 0V46" fill="none" stroke="currentColor" stroke-width="5"/></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/04-news-that-matters.svg' %}#still" data-scene="{% static 'scanner/scenes/04-news-that-matters.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
       <article class="slide slide--yellow" role="group" aria-roledescription="slide" aria-label="6 of 6">
@@ -62,7 +62,7 @@
           <p>Uploads are read in memory and thrown away. Results live only in your browser session. Only public lookups, like advisory records and feed copies, are saved to keep things fast.</p>
           <div class="slide-cta"><md-filled-button href="{% url 'scanner:scan' %}">Start a scan</md-filled-button></div>
         </div>
-        <svg class="slide-art" viewBox="0 0 200 160" aria-hidden="true"><path d="M100 14l56 20v42c0 32-24 58-56 66-32-8-56-34-56-66V34z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M76 80l16 16 32-32" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="slide-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/05-private-by-design.svg' %}#still" data-scene="{% static 'scanner/scenes/05-private-by-design.svg' %}" alt="" width="1200" height="896" loading="lazy" decoding="async"></div>
       </article>
 
     </div>

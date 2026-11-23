@@ -2,13 +2,34 @@
 {% block title %}Sentinel: about and site architecture{% endblock %}
 {% block body_class %}about{% endblock %}
 {% block head %}{% load static %}<link rel="stylesheet" href="{% static 'scanner/about.css' %}">{% endblock %}
-{% block content %}
-<header class="hero">
+{% block content %}{% load static %}
+<header class="hero about-hero">
   <div>
     <h1 class="iz-title display">About <b>Sentinel</b></h1>
     <p class="muted">Sentinel checks your dependency files against public vulnerability advisories and collects the latest security news in one place.{% if not public_only %} Signed-in operators can also run security tools against their own Git repositories, and every action there is written to a tamper-evident audit log.{% endif %}</p>
   </div>
+  <div class="about-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/02-six-sources.svg' %}" alt="" width="1200" height="896" decoding="async"></div>
 </header>
+
+<section class="iz-card panel" aria-labelledby="flow-title">
+  <div>
+    <h2 class="iz-title" id="flow-title">How a scan <b>travels</b></h2>
+    <p class="muted small">From your browser to the sources and back, and what is kept along the way.</p>
+  </div>
+  <ol class="flow" aria-label="How a scan travels">
+    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-teal)"></span><b>You</b><span>Upload or paste a dependency file</span></li>
+    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-orange)"></span><b>Cloudflare</b><span>Encrypts the connection and absorbs attacks</span></li>
+    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-purple)"></span><b>nginx</b><span>Rate limits scans; only public pages pass</span></li>
+    <li class="flow-step flow-step--app"><span class="flow-dot" style="--c: var(--iz-blue)"></span><b>Sentinel</b><span>Reads the file in memory, asks the sources, ranks the findings</span></li>
+    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-red)"></span><b>6 public sources</b><span>OSV.dev · CISA KEV · NVD · CVE.org · RetireJS · news feeds</span></li>
+  </ol>
+  <ul class="stores" aria-label="What is kept">
+    <li><span class="store-mark store-mark--no" aria-hidden="true"></span><b>Your file</b><span>Never stored: read in memory, then thrown away</span></li>
+    <li><span class="store-mark" aria-hidden="true"></span><b>Your results</b><span>Only in your browser session, gone when you close it</span></li>
+    <li><span class="store-mark" aria-hidden="true"></span><b>Scan log</b><span>Time, IP address and package list, deleted after {{ retention_days }} days</span></li>
+    <li><span class="store-mark" aria-hidden="true"></span><b>Public cache</b><span>Advisory records and news feeds, so repeat scans are fast</span></li>
+  </ul>
+</section>
 
 <section class="iz-card panel" aria-labelledby="sitemap-title">
   <div>
@@ -21,44 +42,42 @@
     <li><span class="tag tag--staff">Staff</span> admins and permitted staff only</li>{% endif %}
     <li><span class="tag tag--api">API</span> called by a page, not opened directly</li>
   </ul>
-  <ul class="tree" aria-label="Site map">
-    <li><span class="node"><a href="{% url 'scanner:home' %}"><code>/</code></a> <b>Home</b> <span class="tag tag--public">Public</span><span class="node-note">What Sentinel does, then the latest security news and official reports</span></span>
+  <ul class="orgchart" aria-label="Site map">
+    <li>
+      <a class="node node--public node--root" href="{% url 'scanner:home' %}"><code>/</code><b>Home</b><span>News and what Sentinel does</span></a>
       <ul>
-        <li><span class="node"><a href="{% url 'scanner:scan' %}"><code>/scan/</code></a> <b>Scan</b> <span class="tag tag--public">Public</span><span class="node-note">GET shows the upload form; POST runs the scan and redirects to the result</span></span>
-          <ul>
-            <li><span class="node"><code>/parse/</code> <b>Detected packages</b> <span class="tag tag--api">API</span><span class="node-note">POST, returns JSON: the packages found before you scan</span></span></li>
-          </ul>
+        <li>
+          <a class="node node--public" href="{% url 'scanner:scan' %}"><code>/scan/</code><b>Scan</b><span>Upload form; POST runs the scan</span></a>
+          <ul><li><span class="node node--api"><code>/parse/</code><b>Detected packages</b><span>JSON preview</span></span></li></ul>
         </li>
-        <li><span class="node"><a href="{% url 'scanner:results' %}"><code>/results/</code></a> <b>Results</b> <span class="tag tag--public">Public</span><span class="node-note">Your recent scans, kept only for this browser session</span></span>
-          <ul>
-            <li><span class="node"><code>/results/&lt;id&gt;/</code> <b>Scan result</b> <span class="tag tag--public">Public</span><span class="node-note">Findings by package, the sources behind them, severity and the upgrades that fix them</span></span></li>
-          </ul>
+        <li>
+          <a class="node node--public" href="{% url 'scanner:results' %}"><code>/results/</code><b>Results</b><span>Your recent scans</span></a>
+          <ul><li><span class="node node--public"><code>/results/&lt;id&gt;/</code><b>Scan result</b><span>Findings and fixes</span></span></li></ul>
         </li>
-        <li><span class="node"><a href="{% url 'scanner:about' %}" aria-current="page"><code>/about/</code></a> <b>About</b> <span class="tag tag--public">Public</span><span class="node-note">This page</span></span></li>
-        <li><span class="node"><code>/health/</code> <b>Health check</b> <span class="tag tag--api">API</span><span class="node-note">JSON for uptime monitoring: the app answers and its database is reachable</span></span></li>
+        <li><a class="node node--public" href="{% url 'scanner:about' %}" aria-current="page"><code>/about/</code><b>About</b><span>This page</span></a></li>
+        <li><span class="node node--api"><code>/health/</code><b>Health check</b><span>For uptime monitoring</span></span></li>
         {% if not public_only %}
-        <li><span class="node"><code>/server/</code> <b>Security runs</b> <span class="tag tag--role">Role</span><span class="node-note">Targets and recent runs (operators, auditors, admins)</span></span>
+        <li>
+          <span class="node node--role"><code>/server/</code><b>Security runs</b><span>Targets and runs</span></span>
           <ul>
-            <li><span class="node"><code>/server/targets/add/</code> <b>Add target</b> <span class="tag tag--role">Role</span><span class="node-note">POST: register a Git repository to scan (operators, admins)</span></span></li>
-            <li><span class="node"><code>/server/start/</code> <b>Start run</b> <span class="tag tag--role">Role</span><span class="node-note">POST: run the security pipeline against a target (operators, admins)</span></span></li>
-            <li><span class="node"><code>/server/runs/&lt;id&gt;/</code> <b>Run detail</b> <span class="tag tag--role">Role</span><span class="node-note">Each step, its captured output and the findings</span></span>
-              <ul>
-                <li><span class="node"><code>/server/runs/&lt;id&gt;/status/</code> <b>Run status</b> <span class="tag tag--api">API</span><span class="node-note">JSON polled by the run page until the run finishes</span></span></li>
-              </ul>
-            </li>
-            <li><span class="node"><code>/server/audit/</code> <b>Audit trail</b> <span class="tag tag--role">Role</span><span class="node-note">The hash-chained audit log, verified each time it is opened (auditors, admins)</span></span></li>
+            <li><span class="node node--role"><code>/server/targets/add/</code><b>Add target</b><span>Register a repository</span></span></li>
+            <li><span class="node node--role"><code>/server/start/</code><b>Start run</b><span>Run the pipeline</span></span></li>
+            <li><span class="node node--role"><code>/server/runs/&lt;id&gt;/</code><b>Run detail</b><span>Steps and findings</span></span></li>
+            <li><span class="node node--api"><code>/server/runs/&lt;id&gt;/status/</code><b>Run status</b><span>Polled while running</span></span></li>
+            <li><span class="node node--role"><code>/server/audit/</code><b>Audit trail</b><span>Hash-chained log</span></span></li>
           </ul>
         </li>
-        <li><span class="node"><code>/auth/</code> <b>Sign-in</b><span class="node-note">GitHub sign-in; only listed GitHub accounts get a role</span></span>
+        <li>
+          <span class="node node--public"><code>/auth/</code><b>Sign-in</b><span>GitHub, listed accounts only</span></span>
           <ul>
-            <li><span class="node"><code>/auth/github/login/</code> <b>Sign in with GitHub</b> <span class="tag tag--public">Public</span></span></li>
-            <li><span class="node"><code>/auth/github/callback/</code> <b>GitHub callback</b> <span class="tag tag--api">API</span><span class="node-note">GitHub sends you back here after you approve</span></span></li>
-            <li><span class="node"><code>/auth/logout/</code> <b>Sign out</b> <span class="tag tag--role">Role</span><span class="node-note">POST; also clears your session results</span></span></li>
+            <li><span class="node node--public"><code>/auth/github/login/</code><b>Sign in</b><span>Starts GitHub sign-in</span></span></li>
+            <li><span class="node node--api"><code>/auth/github/callback/</code><b>Callback</b><span>GitHub returns here</span></span></li>
+            <li><span class="node node--role"><code>/auth/logout/</code><b>Sign out</b><span>Clears your results</span></span></li>
           </ul>
         </li>
-        <li><span class="node"><b>Admin</b> <span class="tag tag--staff">Staff</span><span class="node-note">Django admin for scan logs, audit events, targets and runs. Its address is set per server and is not listed here.</span></span></li>
+        <li><span class="node node--staff"><b>Admin</b><span>Address set per server, not listed</span></span></li>
         {% endif %}
-        <li><span class="node"><code>/static/</code> <b>Static files</b> <span class="tag tag--public">Public</span><span class="node-note">Styles, scripts and package logos</span></span></li>
+        <li><span class="node node--public"><code>/static/</code><b>Static files</b><span>Styles, scripts, images</span></span></li>
       </ul>
     </li>
   </ul>
@@ -69,48 +88,53 @@
     <h2 class="iz-title" id="code-title">Under <b>the hood</b></h2>
     <p class="muted small">{% if public_only %}The parts of Sentinel that run this site.{% else %}One Django project with four apps. Each app owns its own pages and data.{% endif %}</p>
   </div>
-  <ul class="tree" aria-label="Code architecture">
-    <li><span class="node"><b>config</b><span class="node-note">Settings, root URLs and the WSGI entry point</span></span>
-      <ul>
-        <li><span class="node"><b>scanner</b> <code>/</code><span class="node-note">Dependency scanner, news and the public site</span></span>
-          <ul>
-            <li><span class="node"><code>parsers</code><span class="node-note">Reads requirements.txt, pyproject.toml, package.json and lockfiles</span></span></li>
-            <li><span class="node"><code>scan</code> · <code>sources</code> · <code>versions</code><span class="node-note">Asks all six sources at once, merges duplicates, and matches exact versions and ranges</span></span></li>
-            <li><span class="node"><code>triage</code><span class="node-note">Sorts findings into confirmed, possible and already fixed; exploited and malicious first</span></span></li>
-            <li><span class="node"><code>news</code> · <code>headlines</code><span class="node-note">RSS feeds, CVE matching, the newsroom and the ticker</span></span></li>
-            <li><span class="node"><code>http_client</code> · <code>store</code><span class="node-note">Outbound requests, and the cache of public lookups (never your uploads)</span></span></li>
-            <li><span class="node"><code>history</code><span class="node-note">Session-only result history</span></span></li>
-            <li><span class="node"><code>middleware</code><span class="node-note">Request tracing, security headers, rate limiting and no-store caching</span></span></li>
-            <li><span class="node"><code>ScanLog</code> model<span class="node-note">Time, IP and package list per scan, deleted after {{ retention_days }} days</span></span></li>
+  <div class="arch" role="group" aria-label="Code architecture">
+    <div class="arch-project">
+      <p class="arch-head"><b>config</b><span>Settings, root URLs and the WSGI entry point</span></p>
+      <div class="arch-apps">
+        <section class="arch-app" style="--c: var(--iz-blue)" aria-label="scanner app">
+          <p class="arch-head"><b>scanner</b><code>/</code><span>Dependency scanner, news and the public site</span></p>
+          <ul class="mods">
+            <li><code>parsers</code><span>Reads requirements.txt, pyproject.toml, package.json and lockfiles</span></li>
+            <li><code>scan</code> <code>sources</code> <code>versions</code><span>Asks all six sources at once, merges duplicates, matches versions and ranges</span></li>
+            <li><code>triage</code><span>Confirmed, possible or already fixed; exploited and malicious first</span></li>
+            <li><code>news</code> <code>headlines</code><span>RSS feeds, CVE matching, the newsroom and the ticker</span></li>
+            <li><code>http_client</code> <code>store</code><span>Outbound requests, and the cache of public lookups (never your uploads)</span></li>
+            <li><code>history</code><span>Session-only result history</span></li>
+            <li><code>middleware</code><span>Request tracing, security headers, rate limiting and no-store caching</span></li>
+            <li><code>ScanLog</code><span>Time, IP and package list per scan, deleted after {{ retention_days }} days</span></li>
           </ul>
-        </li>
+        </section>
         {% if not public_only %}
-        <li><span class="node"><b>pipeline</b> <code>/server/</code><span class="node-note">Security runs on registered Git targets</span></span>
-          <ul>
-            <li><span class="node"><code>gitsafe</code><span class="node-note">Validates repository URLs and refs before anything is cloned</span></span></li>
-            <li><span class="node"><code>runner</code> · <code>jobs</code> · <code>adapters</code><span class="node-note">Runs each tool step in the background and parses its output</span></span></li>
-            <li><span class="node"><code>bugchecks</code> · <code>osvlocal</code><span class="node-note">Built-in bug checks and the offline OSV database</span></span></li>
-            <li><span class="node"><code>access</code><span class="node-note">Permission checks for every pipeline page</span></span></li>
-            <li><span class="node"><code>Target</code> · <code>Run</code> · <code>Step</code> · <code>Finding</code> models</span></li>
+        <section class="arch-app" style="--c: var(--iz-purple)" aria-label="pipeline app">
+          <p class="arch-head"><b>pipeline</b><code>/server/</code><span>Security runs on registered Git targets</span></p>
+          <ul class="mods">
+            <li><code>gitsafe</code><span>Validates repository URLs and refs before anything is cloned</span></li>
+            <li><code>runner</code> <code>jobs</code> <code>adapters</code><span>Runs each tool step in the background and parses its output</span></li>
+            <li><code>bugchecks</code> <code>osvlocal</code><span>Built-in bug checks and the offline OSV database</span></li>
+            <li><code>access</code><span>Permission checks for every pipeline page</span></li>
+            <li><code>Target</code> <code>Run</code> <code>Step</code> <code>Finding</code><span>Models</span></li>
           </ul>
-        </li>
-        <li><span class="node"><b>accounts</b> <code>/auth/</code><span class="node-note">GitHub sign-in and roles</span></span>
-          <ul>
-            <li><span class="node"><code>github</code><span class="node-note">The OAuth sign-in flow</span></span></li>
-            <li><span class="node"><code>roles</code> · <code>identity</code><span class="node-note">Maps listed GitHub logins to operator, auditor or admin; anyone else is refused</span></span></li>
-            <li><span class="node"><code>middleware</code><span class="node-note">Signs out anyone removed from the list on their very next request</span></span></li>
+        </section>
+        <section class="arch-app" style="--c: var(--iz-teal)" aria-label="accounts app">
+          <p class="arch-head"><b>accounts</b><code>/auth/</code><span>GitHub sign-in and roles</span></p>
+          <ul class="mods">
+            <li><code>github</code><span>The OAuth sign-in flow</span></li>
+            <li><code>roles</code> <code>identity</code><span>Maps listed GitHub logins to operator, auditor or admin; anyone else is refused</span></li>
+            <li><code>middleware</code><span>Signs out anyone removed from the list on their very next request</span></li>
           </ul>
-        </li>
-        <li><span class="node"><b>audit</b><span class="node-note">Tamper-evident record of what happened</span></span>
-          <ul>
-            <li><span class="node"><code>log</code><span class="node-note">Appends hash-chained events and stores evidence by its SHA-256</span></span></li>
-            <li><span class="node"><code>AuditEvent</code> · <code>EvidenceArtifact</code> models</span></li>
-            <li><span class="node"><code>verify_audit</code> command<span class="node-note">Re-checks the whole chain from the command line</span></span></li>
+        </section>
+        <section class="arch-app" style="--c: var(--iz-orange)" aria-label="audit app">
+          <p class="arch-head"><b>audit</b><span>Tamper-evident record of what happened</span></p>
+          <ul class="mods">
+            <li><code>log</code><span>Appends hash-chained events and stores evidence by its SHA-256</span></li>
+            <li><code>AuditEvent</code> <code>EvidenceArtifact</code><span>Models</span></li>
+            <li><code>verify_audit</code><span>Re-checks the whole chain from the command line</span></li>
           </ul>
-        </li>
+        </section>
         {% endif %}
-      </ul>
-    </li>
-  </ul>
+      </div>
+    </div>
+  </div>
 </section>
 {% endblock %}

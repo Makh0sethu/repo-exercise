@@ -1,27 +1,99 @@
-/* About page: site map and code architecture trees. Built on izitho-m3.css tokens. */
+/* About page diagrams: request flow, site map org chart, code architecture. Built on izitho-m3.css tokens. */
+.about-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 28px; align-items: center; }
+.about-scene { aspect-ratio: 1200 / 896; }   /* transparent scene, straight on the page */
+.about-scene img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* Access tags (legend and node stripes share the colours) */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--iz-ink-2); }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }
-
 .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
-.tag--public { background: color-mix(in srgb, var(--iz-teal) 18%, var(--iz-card)); color: color-mix(in srgb, var(--iz-teal) 55%, var(--iz-ink)); }
-.tag--role { background: color-mix(in srgb, var(--iz-blue) 18%, var(--iz-card)); color: color-mix(in srgb, var(--iz-blue) 55%, var(--iz-ink)); }
-.tag--staff { background: color-mix(in srgb, var(--iz-orange) 20%, var(--iz-card)); color: color-mix(in srgb, var(--iz-orange) 45%, var(--iz-ink)); }
-.tag--api { background: color-mix(in srgb, var(--iz-purple) 16%, var(--iz-card)); color: color-mix(in srgb, var(--iz-purple) 55%, var(--iz-ink)); }
+.tag--public, .node--public { --acc: var(--iz-teal); }
+.tag--role, .node--role { --acc: var(--iz-blue); }
+.tag--staff, .node--staff { --acc: var(--iz-orange); }
+.tag--api, .node--api { --acc: var(--iz-purple); }
+.tag { background: color-mix(in srgb, var(--acc) 18%, var(--iz-card)); color: color-mix(in srgb, var(--acc) 55%, var(--iz-ink)); }
 
-/* Nested lists drawn as a tree: a vertical rail per level, a short branch per item. */
-.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree ul { margin-left: 10px; padding-left: 20px; border-left: 2px solid var(--iz-line); }
-.tree li { position: relative; padding: 6px 0; }
-.tree ul > li::before { content: ""; position: absolute; left: -22px; top: 17px; width: 16px; border-top: 2px solid var(--iz-line); }
-.tree ul > li:last-child::after { content: ""; position: absolute; left: -22px; top: 19px; bottom: 0; width: 2px; background: var(--iz-card); }
-.tree .node { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
-.tree .node code { font-size: 13px; overflow-wrap: anywhere; }
-.tree .node a { color: var(--iz-link); text-decoration: none; }
-.tree .node a:hover, .tree .node a:focus-visible { text-decoration: underline; }
-.tree .node-note { flex-basis: 100%; font-size: 13px; color: var(--iz-ink-2); }
+/* ---- Flow: a row of steps with arrows; a column on narrow screens ---- */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 30px; counter-reset: step; }
+.flow-step { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 16px 14px; border-radius: 16px; background: var(--iz-card); box-shadow: var(--iz-raised-sm); font-size: 13px; color: var(--iz-ink-2); }
+.flow-step b { font-size: 15px; color: var(--iz-ink); }
+.flow-step--app { outline: 3px solid color-mix(in srgb, var(--iz-blue) 45%, transparent); outline-offset: -3px; }
+.flow-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.flow-step:not(:last-child)::after { content: ""; position: absolute; top: 50%; right: -24px; width: 18px; height: 2px; background: var(--iz-ink-2); }
+.flow-step:not(:last-child)::before { content: ""; position: absolute; top: calc(50% - 5px); right: -25px; border: 6px solid transparent; border-left-color: var(--iz-ink-2); border-right: 0; }
+.stores { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stores li { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: baseline; font-size: 13px; color: var(--iz-ink-2); padding: 12px 14px; border-radius: 14px; box-shadow: var(--iz-inset); }
+.stores li b { color: var(--iz-ink); font-size: 14px; }
+.stores li span:last-child { grid-column: 2; }
+.store-mark { width: 10px; height: 10px; border-radius: 3px; background: var(--iz-teal); align-self: center; }
+.store-mark--no { background: none; border: 2px solid var(--iz-red); position: relative; }
+.store-mark--no::after { content: ""; position: absolute; left: -3px; top: 2px; width: 12px; height: 2px; background: var(--iz-red); transform: rotate(-45deg); }
 
+/* ---- Site map: an org chart (root, then one column per section) ---- */
+.node { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; max-width: 100%; padding: 9px 12px 10px 14px; border-radius: 12px; background: var(--iz-card); box-shadow: var(--iz-raised-sm); text-align: left; text-decoration: none; color: var(--iz-ink); position: relative; overflow: hidden; }
+.node::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--acc); }
+.node code { font-size: 12px; color: var(--iz-ink-2); overflow-wrap: anywhere; }
+.node b { font-size: 14px; }
+.node span { font-size: 12px; color: var(--iz-ink-2); }
+a.node:hover b, a.node:focus-visible b { text-decoration: underline; }
+a.node:focus-visible { outline: 3px solid var(--iz-blue); outline-offset: 2px; }
+.node--root { padding: 12px 18px 12px 20px; }
+.node--root b { font-size: 17px; }
+
+.orgchart, .orgchart ul { list-style: none; margin: 0; padding: 0; }
+.orgchart { --line: color-mix(in srgb, var(--iz-ink-2) 45%, transparent); }
+.orgchart > li { text-align: center; }
+.orgchart > li > ul { display: flex; justify-content: center; gap: 0; padding-top: 22px; position: relative; }
+.orgchart > li > ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 22px; border-left: 2px solid var(--line); }
+.orgchart > li > ul > li { flex: 1 1 0; min-width: 0; position: relative; padding: 22px 5px 0; display: flex; flex-direction: column; align-items: center; }
+/* horizontal rail and the drop to each section */
+.orgchart > li > ul > li::before, .orgchart > li > ul > li::after { content: ""; position: absolute; top: 0; width: 50%; height: 22px; border-top: 2px solid var(--line); }
+.orgchart > li > ul > li::before { right: 50%; }
+.orgchart > li > ul > li::after { left: 50%; border-left: 2px solid var(--line); }
+.orgchart > li > ul > li:first-child::before, .orgchart > li > ul > li:last-child::after { border-top: 0; }
+.orgchart > li > ul > li:first-child::after { border-radius: 10px 0 0 0; }
+.orgchart > li > ul > li:last-child::before { border-right: 2px solid var(--line); border-radius: 0 10px 0 0; }
+/* each section's pages hang below it in a column */
+.orgchart > li > ul > li > ul { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.orgchart > li > ul > li > ul > li { position: relative; padding-top: 14px; display: flex; justify-content: center; max-width: 100%; }
+.orgchart > li > ul > li > ul > li::before { content: ""; position: absolute; top: 0; left: 50%; height: 14px; border-left: 2px solid var(--line); }
+.orgchart > li > ul > li .node { width: 100%; }
+
+/* ---- Code architecture: the project box holds one box per app, each with its modules ---- */
+.arch-project { border-radius: 20px; padding: 16px; box-shadow: var(--iz-inset); display: flex; flex-direction: column; gap: 14px; }
+.arch-head { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.arch-head b { font-size: 16px; color: var(--iz-ink); }
+.arch-head code { font-size: 12px; color: var(--iz-ink-2); }
+.arch-head span { flex-basis: 100%; font-size: 13px; color: var(--iz-ink-2); }
+.arch-apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.arch-app { border-radius: 16px; padding: 14px; background: var(--iz-card); box-shadow: var(--iz-raised-sm); border-top: 6px solid var(--c); display: flex; flex-direction: column; gap: 10px; }
+.mods { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mods li { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--c) 8%, var(--iz-card)); }
+.mods code { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--c) 18%, var(--iz-card)); color: var(--iz-ink); }
+.mods span { flex-basis: 100%; font-size: 12px; color: var(--iz-ink-2); }
+
+/* ---- Narrow screens: the flow and the org chart become columns ---- */
+@media (max-width: 980px) {
+  .about-hero { grid-template-columns: 1fr; }
+  .flow { grid-template-columns: 1fr; gap: 22px; }
+  .flow-step:not(:last-child)::after { top: auto; bottom: -18px; right: auto; left: 28px; width: 2px; height: 14px; }
+  .flow-step:not(:last-child)::before { top: auto; bottom: -22px; right: auto; left: 23px; border: 6px solid transparent; border-top-color: var(--iz-ink-2); border-bottom: 0; }
+  .stores { grid-template-columns: 1fr 1fr; }
+}
+/* The org chart needs room for one column per section (6 on the public site, 9 with the admin parts),
+   so below 1100 px it folds into an indented tree. */
+@media (max-width: 1100px) {
+  .orgchart > li { text-align: left; }
+  .orgchart > li > ul { display: block; padding: 8px 0 0 18px; margin-left: 12px; border-left: 2px solid var(--line); }
+  .orgchart > li > ul::before { display: none; }
+  .orgchart > li > ul > li { display: block; padding: 8px 0 0; }
+  .orgchart > li > ul > li::before { display: block; top: 30px; left: -18px; right: auto; width: 14px; height: 0; border: 0; border-top: 2px solid var(--line); border-radius: 0; }
+  .orgchart > li > ul > li::after { display: none; }
+  .orgchart > li > ul > li > ul { display: block; padding: 0 0 0 18px; margin-left: 12px; border-left: 2px solid var(--line); }
+  .orgchart > li > ul > li > ul > li { display: block; padding-top: 8px; }
+  .orgchart > li > ul > li > ul > li::before { top: 30px; left: -18px; width: 14px; height: 0; border: 0; border-top: 2px solid var(--line); }
+  .orgchart > li > ul > li .node { width: auto; }
+}
 @media (max-width: 560px) {
-  .tree ul { margin-left: 4px; padding-left: 14px; }
-  .tree ul > li::before { left: -16px; width: 10px; }
-  .tree ul > li:last-child::after { left: -16px; }
+  .stores { grid-template-columns: 1fr; }
 }

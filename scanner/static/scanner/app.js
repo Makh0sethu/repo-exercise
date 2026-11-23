@@ -286,6 +286,17 @@ if (carousel) {
     return b;
   });
 
+  // Character scenes: only the slide on screen animates, and it starts its story when shown.
+  // Every other slide, a paused carousel and reduced motion all show the scene's still frame.
+  const scenes = slides.map((s) => $("img[data-scene]", s));
+  function syncScenes() {
+    scenes.forEach((img, n) => {
+      if (!img) return;
+      const want = img.dataset.scene + (n === index && !userPaused ? "" : "#still");
+      if (img.getAttribute("src") !== want) img.setAttribute("src", want);
+    });
+  }
+
   function go(i) {
     index = (i + slides.length) % slides.length;
     track.style.transform = `translateX(-${index * 100}%)`;
@@ -295,6 +306,7 @@ if (carousel) {
       s.inert = !on;                                      // off-screen slides' buttons are not tabbable
     });
     buttons.forEach((b, n) => b.setAttribute("aria-current", String(n === index)));
+    syncScenes();
   }
   function stop() { clearInterval(timer); timer = null; }
   function restart() {
@@ -305,6 +317,7 @@ if (carousel) {
     carousel.classList.toggle("is-paused", userPaused);
     pauseBtn.setAttribute("aria-pressed", String(userPaused));
     pauseBtn.setAttribute("aria-label", userPaused ? "Play slides" : "Pause slides");
+    syncScenes();
   }
 
   $("[data-prev]", carousel).addEventListener("click", () => { go(index - 1); restart(); });

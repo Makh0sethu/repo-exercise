@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from datetime import datetime
 from unittest import mock
@@ -532,6 +533,10 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'aria-label="Site map"')
         self.assertContains(r, 'aria-label="Code architecture"')
+        self.assertContains(r, 'aria-label="How a scan travels"')
+        self.assertContains(r, 'class="orgchart"')
+        for app in ("scanner", "pipeline", "accounts", "audit"):
+            self.assertContains(r, f'aria-label="{app} app"')
         for route in ("/scan/", "/parse/", "/results/", "/server/audit/", "/server/runs/&lt;id&gt;/status/", "/auth/github/login/"):
             self.assertContains(r, f"<code>{route}</code>")
         self.assertNotContains(r, "/" + settings.SENTINEL_ADMIN_PATH)          # a private admin path stays private
@@ -625,8 +630,11 @@ class PublicOnlyModeTests(TestCase):
         r = self.client.get("/about/")
         self.assertContains(r, "<code>/scan/</code>")
         self.assertContains(r, "<code>/health/</code>")
-        for hidden in ("<b>pipeline</b>", "<b>accounts</b>", "<b>audit</b>", "tag--role", "tag--staff", "Signed-in operators"):
+        for hidden in ("<b>pipeline</b>", "<b>accounts</b>", "<b>audit</b>", "tag--role", "tag--staff", "node--role",
+                       "node--staff", "Signed-in operators", 'aria-label="pipeline app"'):
             self.assertNotContains(r, hidden)
+        self.assertContains(r, 'aria-label="scanner app"')
+        self.assertContains(r, 'aria-label="How a scan travels"')
 
 
 @override_settings(FORCE_SCRIPT_NAME="/sentinel", STATIC_URL="/sentinel/static/")
@@ -1176,6 +1184,15 @@ class HomePageTests(TestCase):
         self.assertIn('aria-label="Latest headlines"', page)
         self.assertIn("home.css", page)
         self.assertIn("4 stories from", page)
+
+    def test_each_slide_has_a_character_scene_that_starts_still(self):
+        page = self.client.get("/").content.decode()
+        scenes = re.findall(r'<img src="([^"]+)" data-scene="([^"]+)"', page)
+        self.assertEqual(len(scenes), 6)
+        for src, scene in scenes:
+            self.assertEqual(src, scene + "#still")                           # app.js plays only the slide on screen
+            self.assertRegex(scene, r"/static/scanner/scenes/0[1-6]-[a-z-]+\.svg$")
+        self.assertEqual(len({s for _, s in scenes}), 6)
 
     def test_duplicate_stories_and_unsafe_links_are_dropped(self):
         self.save_feed("The Hacker News", [self.story("Same headline", 1, url="https://a/1"), self.story("javascript link", 1, url="javascript:alert(1)")])
