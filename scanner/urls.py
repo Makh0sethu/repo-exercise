@@ -10,4 +10,5 @@ urlpatterns = [
     path("parse/", views.parse_preview, name="parse"),
     path("results/", views.results_list, name="results"),
     path("results/<str:rid>/", views.result_page, name="result"),
+    path("about/", views.about, name="about"),
 ]

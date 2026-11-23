@@ -526,6 +526,17 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
     def test_empty_results_list_explains_itself(self):
         self.assertContains(self.client.get("/results/"), "No results in this session yet")
 
+    def test_about_page_shows_the_site_map_without_the_admin_address(self):
+        from django.conf import settings
+        r = self.client.get("/about/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'aria-label="Site map"')
+        self.assertContains(r, 'aria-label="Code architecture"')
+        for route in ("/scan/", "/parse/", "/results/", "/server/audit/", "/server/runs/&lt;id&gt;/status/", "/auth/github/login/"):
+            self.assertContains(r, f"<code>{route}</code>")
+        self.assertNotContains(r, "/" + settings.SENTINEL_ADMIN_PATH)          # a private admin path stays private
+        self.assertContains(r, 'aria-current="page">About')                     # nav marks it active
+
     def test_failed_scan_keeps_what_the_person_typed(self):
         r = self.client.post("/scan/", {"pasted": "-r other.txt\n# nothing usable", "other": "not a valid line"})
         self.assertEqual(r.status_code, 400)

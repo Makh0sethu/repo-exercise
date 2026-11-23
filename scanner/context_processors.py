@@ -19,6 +19,7 @@ def sentinel(request):
         {"label": "Scan", "url": reverse("scanner:scan"), "active": path.startswith("/scan/")},
         {"label": "Results", "url": reverse("scanner:results"), "active": _active(path, "/results/"),
          "count": len(request.session.get("scan_history", [])) if hasattr(request, "session") else 0},
+        {"label": "About", "url": reverse("scanner:about"), "active": _active(path, "/about/")},
     ]
     pen = []
     if (signed_in or open_access(request)) and has_perm(request, "pipeline.view_run"):
