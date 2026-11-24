@@ -12,6 +12,7 @@ CSS inside the file, stopped by prefers-reduced-motion or by loading name.svg#st
 """
 from __future__ import annotations
 
+import sys
 import textwrap
 from pathlib import Path
 
@@ -168,6 +169,68 @@ def flow() -> str:
     return doc(W, H, "How a scan travels",
                "You send a dependency file through Cloudflare and nginx to Sentinel, which asks six public sources at once; the results come back to your browser only. "
                "Your file is never stored; results live in your browser session; a scan log is deleted after 30 days; a public cache keeps advisory records and news feeds.",
+               "".join(out), css)
+
+
+def flow_case_study() -> str:
+    """The flow for the Uhambo case study: no hosting details (Cloudflare, nginx), and what stays with you
+    drawn apart from what Sentinel keeps."""
+    W, H = 1200, 560
+    top, ch = 70, 190
+    nodes = [(60, 260, "You", "Upload or paste a dependency file"),
+             (470, 300, "Sentinel", "Reads the file in memory, asks the sources, ranks findings"),
+             (920, 240, "6 public sources", "Asked all at once")]
+    icons = [
+        lambda cx, y: (f'<rect x="{cx - 34}" y="{y}" width="68" height="48" rx="7" fill="none" stroke="{NAVY}" stroke-width="4"/>'
+                       f'<path d="M{cx - 34} {y + 13} H{cx + 34}" stroke="{NAVY}" stroke-width="4"/>'
+                       f'<circle cx="{cx - 25}" cy="{y + 6.5}" r="2.5" fill="{TERRA}"/><circle cx="{cx - 17}" cy="{y + 6.5}" r="2.5" fill="{OCHRE}"/>'
+                       f'<rect x="{cx - 9}" y="{y + 20}" width="20" height="22" rx="3" fill="{OCHRE}"/>'),
+        lambda cx, y: (f'<path d="M{cx} {y - 2} L{cx + 28} {y + 9} V{y + 26} C{cx + 28} {y + 42} {cx + 15} {y + 50} {cx} {y + 55} C{cx - 15} {y + 50} {cx - 28} {y + 42} {cx - 28} {y + 26} V{y + 9} Z" fill="{NAVY}"/>'
+                       f'<path d="M{cx - 11} {y + 26} l8 8 l16 -17" fill="none" stroke="{OCHRE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'),
+        lambda cx, y: medallions(cx, y + 6),
+    ]
+    out = [f'<path class="flowback" d="M620 {top - 6} V32 H190 V{top - 8}" fill="none" stroke="{SAGE_D}" stroke-width="3" stroke-dasharray="7 9" marker-end="url(#ah-sage)"/>',
+           pill(405, 32, "your results come back to you only", CARD, SAGE_D)]
+    for i, ((x, w, title, sub), icon) in enumerate(zip(nodes, icons)):
+        cx = x + w / 2
+        out.append(card(x, top, w, ch, CARD, NAVY_B if i == 1 else None))
+        out.append(icon(cx, top + 22))
+        out.append(text_block(cx, top + 112, [title], 18, NAVY, "b", "middle"))
+        out.append(text_block(cx, top + 134, lines(sub, int(w / 7.4)), 13, MUTED, "", "middle"))
+        if i < len(nodes) - 1:
+            out.append(f'<path class="flowline" d="M{x + w + 6} {top + ch / 2} H{nodes[i + 1][0] - 8}" stroke="{NAVY_B}" stroke-width="3.5" stroke-dasharray="7 9" marker-end="url(#ah-navy)"/>')
+    # two groups: what stays with you (under You) and what Sentinel keeps (under Sentinel)
+    gy, gh, sy = 320, 220, 372
+    out.append(f'<path d="M190 {top + ch} V{gy - 18}" stroke="{LINE}" stroke-width="2.5" marker-end="url(#ah)"/>')
+    out.append(f'<path d="M700 {top + ch} V290 H890 V{gy - 18}" stroke="{LINE}" stroke-width="2.5" fill="none" marker-end="url(#ah)"/>')
+    out.append(f'<rect x="40" y="{gy}" width="540" height="{gh}" rx="22" fill="{SAGE}" fill-opacity=".14" stroke="{SAGE_D}" stroke-width="2.5" stroke-dasharray="8 6"/>')
+    out.append(f'<rect x="620" y="{gy}" width="540" height="{gh}" rx="22" fill="{NAVY_B}" fill-opacity=".10" stroke="{NAVY_B}" stroke-width="2.5"/>')
+    out.append(pill(190, gy, "STAYS WITH YOU", CARD, SAGE_D, 13))
+    out.append(pill(890, gy, "WHAT WE KEEP", CARD, NAVY, 13))
+    x, cx = 60, 180
+    out.append(card(x, sy, 240, 140, CARD, TERRA, dash=True))
+    out.append(f'<path d="M{cx - 18} {sy + 18} H{cx + 8} L{cx + 20} {sy + 30} V{sy + 62} H{cx - 18} Z" fill="{CREAM}" stroke="{MUTED}" stroke-width="2"/>'
+               f'<path d="M{cx - 24} {sy + 16} L{cx + 26} {sy + 66} M{cx + 26} {sy + 16} L{cx - 24} {sy + 66}" stroke="{TERRA}" stroke-width="5" stroke-linecap="round"/>')
+    out.append(text_block(cx, sy + 94, ["Your file"], 16, NAVY, "b", "middle"))
+    out.append(text_block(cx, sy + 116, ["Never stored: read in memory"], 13, TERRA, "b", "middle"))
+    x, cx = 320, 440
+    out.append(card(x, sy, 240, 140))
+    out.append(f'<rect x="{cx - 30}" y="{sy + 18}" width="60" height="44" rx="6" fill="none" stroke="{NAVY}" stroke-width="3.5"/>'
+               f'<path d="M{cx - 30} {sy + 30} H{cx + 30}" stroke="{NAVY}" stroke-width="3.5"/>'
+               f'<path d="M{cx - 14} {sy + 46} l8 8 l18 -18" fill="none" stroke="{SAGE_D}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>')
+    out.append(text_block(cx, sy + 94, ["Your results"], 16, NAVY, "b", "middle"))
+    out.append(text_block(cx, sy + 116, ["In your browser session only"], 13, MUTED, "", "middle"))
+    out.append(cylinder(640, sy, 240, 140, NAVY, "Scan log", "Time, IP, package list · deleted after 30 days"))
+    out.append(cylinder(900, sy, 240, 140, SAGE_D, "Public cache", "Advisory records and news feeds"))
+    css = """
+  .flowline { animation: flow 1.4s linear infinite; }
+  .flowback { animation: flow 1.4s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -32; } }
+"""
+    return doc(W, H, "How Sentinel works",
+               "You send a dependency file to Sentinel, which asks six public sources at once; the results come back to you only. "
+               "Stays with you: your file, never stored, and your results, kept only in your browser session. "
+               "What Sentinel keeps: a scan log (time, IP address, package list) deleted after 30 days, and a public cache of advisory records and news feeds.",
                "".join(out), css)
 
 
@@ -360,3 +423,8 @@ if __name__ == "__main__":
     for name, text in files.items():
         (OUT / name).write_text(text, encoding="utf-8", newline="\n")
         print(f"{name}: {len(text) / 1024:.1f} KB")
+    # The Uhambo case study's copy of the flow (no hosting details): pass the target file to write it too, e.g.
+    #   python scripts/build_about_diagrams.py ../uhambo-website/public/presentation-designs/projects/sentinel/diagram-flow.svg
+    if len(sys.argv) > 1:
+        Path(sys.argv[1]).write_text(flow_case_study(), encoding="utf-8", newline="\n")
+        print(f"{sys.argv[1]}: case-study flow")
