@@ -1,157 +1,35 @@
 {% extends "scanner/base.html" %}
-{% block title %}Sentinel: about and site architecture{% endblock %}
+{% block title %}About Sentinel{% endblock %}
 {% block body_class %}about{% endblock %}
 {% block head %}{% load static %}<link rel="stylesheet" href="{% static 'scanner/about.css' %}">{% endblock %}
 {% block content %}{% load static %}
 <header class="hero about-hero">
   <div>
     <h1 class="iz-title display">About <b>Sentinel</b></h1>
-    <p class="muted">Sentinel checks your dependency files against public vulnerability advisories and collects the latest security news in one place.{% if not public_only %} Signed-in operators can also run security tools against their own Git repositories, and every action there is written to a tamper-evident audit log.{% endif %}</p>
+    <p class="muted">Sentinel tells you which of your project's packages have known security problems, and what to upgrade to fix them. Drop in a dependency file and every package is checked against six public sources at once.{% if not public_only %} Signed-in operators can also scan their own Git repositories.{% endif %}</p>
+    <ul class="about-points">
+      <li>Exploited bugs and malware come first</li>
+      <li>The version that fixes each problem</li>
+      <li>Security news that names your packages</li>
+      <li>Nothing you upload is stored</li>
+    </ul>
   </div>
   <div class="about-scene" aria-hidden="true"><img src="{% static 'scanner/scenes/02-six-sources.svg' %}" alt="" width="1200" height="896" decoding="async"></div>
 </header>
 
 <section class="iz-card panel" aria-labelledby="flow-title">
-  <div>
-    <h2 class="iz-title" id="flow-title">How a scan <b>travels</b></h2>
-    <p class="muted small">From your browser to the sources and back, and what is kept along the way.</p>
-  </div>
+  <h2 class="iz-title" id="flow-title">How a scan <b>travels</b></h2>
   <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--flow" src="{% static 'scanner/diagrams/flow.svg' %}" alt="Diagram: your file goes from your browser through Cloudflare and nginx to Sentinel, which asks six public sources at once; results come back to your browser only. Your file is never stored, results stay in your session, the scan log is deleted after {{ retention_days }} days, and a public cache keeps advisory records and news feeds." decoding="async"></div></figure>
-  <details class="text-version"><summary>Text version</summary>
-  <ol class="flow" aria-label="How a scan travels">
-    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-teal)"></span><b>You</b><span>Upload or paste a dependency file</span></li>
-    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-orange)"></span><b>Cloudflare</b><span>Encrypts the connection and absorbs attacks</span></li>
-    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-purple)"></span><b>nginx</b><span>Rate limits scans; only public pages pass</span></li>
-    <li class="flow-step flow-step--app"><span class="flow-dot" style="--c: var(--iz-blue)"></span><b>Sentinel</b><span>Reads the file in memory, asks the sources, ranks the findings</span></li>
-    <li class="flow-step"><span class="flow-dot" style="--c: var(--iz-red)"></span><b>6 public sources</b><span>OSV.dev · CISA KEV · NVD · CVE.org · RetireJS · news feeds</span></li>
-  </ol>
-  <ul class="stores" aria-label="What is kept">
-    <li><span class="store-mark store-mark--no" aria-hidden="true"></span><b>Your file</b><span>Never stored: read in memory, then thrown away</span></li>
-    <li><span class="store-mark" aria-hidden="true"></span><b>Your results</b><span>Only in your browser session, gone when you close it</span></li>
-    <li><span class="store-mark" aria-hidden="true"></span><b>Scan log</b><span>Time, IP address and package list, deleted after {{ retention_days }} days</span></li>
-    <li><span class="store-mark" aria-hidden="true"></span><b>Public cache</b><span>Advisory records and news feeds, so repeat scans are fast</span></li>
-  </ul>
-  </details>
 </section>
 
-<section class="iz-card panel" aria-labelledby="sitemap-title">
-  <div>
-    <h2 class="iz-title" id="sitemap-title">Site <b>map</b></h2>
-    <p class="muted small">Every page and endpoint, and who can open it.</p>
-  </div>
+<details class="iz-card panel dev">
+  <summary class="iz-title">For developers: site map and code</summary>
   {% if public_only %}
-  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map" src="{% static 'scanner/diagrams/site-map-public.svg' %}" alt="Diagram: Home links to Scan (with Detected packages), Results (with each scan result), About, Health check and Static files." decoding="async"></div></figure>
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map" src="{% static 'scanner/diagrams/site-map-public.svg' %}" alt="Diagram: Home links to Scan (with Detected packages), Results (with each scan result), About, Health check and Static files." loading="lazy" decoding="async"></div></figure>
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-public.svg' %}" alt="Diagram: the scanner app inside one Django project, with its modules; it asks six public sources, saves public data in a cache file, and writes scan logs and sessions to the database." loading="lazy" decoding="async"></div></figure>
   {% else %}
-  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map-full" src="{% static 'scanner/diagrams/site-map-full.svg' %}" alt="Diagram: Home links to Scan, Results, About, Health check, Security runs (add target, start run, run detail, run status, audit trail), Sign-in (sign in, callback, sign out), Admin and Static files, coloured by who can open each." decoding="async"></div></figure>
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--map-full" src="{% static 'scanner/diagrams/site-map-full.svg' %}" alt="Diagram: Home links to Scan, Results, About, Health check, Security runs (add target, start run, run detail, run status, audit trail), Sign-in (sign in, callback, sign out), Admin and Static files, coloured by who can open each." loading="lazy" decoding="async"></div></figure>
+  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-full.svg' %}" alt="Diagram: one Django project with four apps (scanner, pipeline, accounts, audit) and their modules. The scanner asks six public sources and keeps a public cache; the pipeline runs security tools and clones from GitHub; accounts signs in with GitHub; audit files evidence by SHA-256; all write to one database." loading="lazy" decoding="async"></div></figure>
   {% endif %}
-  <details class="text-version"><summary>Text version</summary>
-  <ul class="legend" aria-label="Legend">
-    <li><span class="tag tag--public">Public</span> anyone</li>
-    {% if not public_only %}<li><span class="tag tag--role">Role</span> signed in with GitHub and given a role</li>
-    <li><span class="tag tag--staff">Staff</span> admins and permitted staff only</li>{% endif %}
-    <li><span class="tag tag--api">API</span> called by a page, not opened directly</li>
-  </ul>
-  <ul class="orgchart" aria-label="Site map">
-    <li>
-      <a class="node node--public node--root" href="{% url 'scanner:home' %}"><code>/</code><b>Home</b><span>News and what Sentinel does</span></a>
-      <ul>
-        <li>
-          <a class="node node--public" href="{% url 'scanner:scan' %}"><code>/scan/</code><b>Scan</b><span>Upload form; POST runs the scan</span></a>
-          <ul><li><span class="node node--api"><code>/parse/</code><b>Detected packages</b><span>JSON preview</span></span></li></ul>
-        </li>
-        <li>
-          <a class="node node--public" href="{% url 'scanner:results' %}"><code>/results/</code><b>Results</b><span>Your recent scans</span></a>
-          <ul><li><span class="node node--public"><code>/results/&lt;id&gt;/</code><b>Scan result</b><span>Findings and fixes</span></span></li></ul>
-        </li>
-        <li><a class="node node--public" href="{% url 'scanner:about' %}" aria-current="page"><code>/about/</code><b>About</b><span>This page</span></a></li>
-        <li><span class="node node--api"><code>/health/</code><b>Health check</b><span>For uptime monitoring</span></span></li>
-        {% if not public_only %}
-        <li>
-          <span class="node node--role"><code>/server/</code><b>Security runs</b><span>Targets and runs</span></span>
-          <ul>
-            <li><span class="node node--role"><code>/server/targets/add/</code><b>Add target</b><span>Register a repository</span></span></li>
-            <li><span class="node node--role"><code>/server/start/</code><b>Start run</b><span>Run the pipeline</span></span></li>
-            <li><span class="node node--role"><code>/server/runs/&lt;id&gt;/</code><b>Run detail</b><span>Steps and findings</span></span></li>
-            <li><span class="node node--api"><code>/server/runs/&lt;id&gt;/status/</code><b>Run status</b><span>Polled while running</span></span></li>
-            <li><span class="node node--role"><code>/server/audit/</code><b>Audit trail</b><span>Hash-chained log</span></span></li>
-          </ul>
-        </li>
-        <li>
-          <span class="node node--public"><code>/auth/</code><b>Sign-in</b><span>GitHub, listed accounts only</span></span>
-          <ul>
-            <li><span class="node node--public"><code>/auth/github/login/</code><b>Sign in</b><span>Starts GitHub sign-in</span></span></li>
-            <li><span class="node node--api"><code>/auth/github/callback/</code><b>Callback</b><span>GitHub returns here</span></span></li>
-            <li><span class="node node--role"><code>/auth/logout/</code><b>Sign out</b><span>Clears your results</span></span></li>
-          </ul>
-        </li>
-        <li><span class="node node--staff"><b>Admin</b><span>Address set per server, not listed</span></span></li>
-        {% endif %}
-        <li><span class="node node--public"><code>/static/</code><b>Static files</b><span>Styles, scripts, images</span></span></li>
-      </ul>
-    </li>
-  </ul>
-  </details>
-</section>
-
-<section class="iz-card panel" aria-labelledby="code-title">
-  <div>
-    <h2 class="iz-title" id="code-title">Under <b>the hood</b></h2>
-    <p class="muted small">{% if public_only %}The parts of Sentinel that run this site.{% else %}One Django project with four apps. Each app owns its own pages and data.{% endif %}</p>
-  </div>
-  {% if public_only %}
-  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-public.svg' %}" alt="Diagram: the scanner app inside one Django project, with its modules; it asks six public sources, saves public data in a cache file, and writes scan logs and sessions to the database." decoding="async"></div></figure>
-  {% else %}
-  <figure class="diagram"><div class="diagram-scroll"><img class="diagram-img diagram-img--arch" src="{% static 'scanner/diagrams/architecture-full.svg' %}" alt="Diagram: one Django project with four apps (scanner, pipeline, accounts, audit) and their modules. The scanner asks six public sources and keeps a public cache; the pipeline runs security tools and clones from GitHub; accounts signs in with GitHub; audit files evidence by SHA-256; all write to one database." decoding="async"></div></figure>
-  {% endif %}
-  <details class="text-version"><summary>Text version</summary>
-  <div class="arch" role="group" aria-label="Code architecture">
-    <div class="arch-project">
-      <p class="arch-head"><b>config</b><span>Settings, root URLs and the WSGI entry point</span></p>
-      <div class="arch-apps">
-        <section class="arch-app" style="--c: var(--iz-blue)" aria-label="scanner app">
-          <p class="arch-head"><b>scanner</b><code>/</code><span>Dependency scanner, news and the public site</span></p>
-          <ul class="mods">
-            <li><code>parsers</code><span>Reads requirements.txt, pyproject.toml, package.json and lockfiles</span></li>
-            <li><code>scan</code> <code>sources</code> <code>versions</code><span>Asks all six sources at once, merges duplicates, matches versions and ranges</span></li>
-            <li><code>triage</code><span>Confirmed, possible or already fixed; exploited and malicious first</span></li>
-            <li><code>news</code> <code>headlines</code><span>RSS feeds, CVE matching, the newsroom and the ticker</span></li>
-            <li><code>http_client</code> <code>store</code><span>Outbound requests, and the cache of public lookups (never your uploads)</span></li>
-            <li><code>history</code><span>Session-only result history</span></li>
-            <li><code>middleware</code><span>Request tracing, security headers, rate limiting and no-store caching</span></li>
-            <li><code>ScanLog</code><span>Time, IP and package list per scan, deleted after {{ retention_days }} days</span></li>
-          </ul>
-        </section>
-        {% if not public_only %}
-        <section class="arch-app" style="--c: var(--iz-purple)" aria-label="pipeline app">
-          <p class="arch-head"><b>pipeline</b><code>/server/</code><span>Security runs on registered Git targets</span></p>
-          <ul class="mods">
-            <li><code>gitsafe</code><span>Validates repository URLs and refs before anything is cloned</span></li>
-            <li><code>runner</code> <code>jobs</code> <code>adapters</code><span>Runs each tool step in the background and parses its output</span></li>
-            <li><code>bugchecks</code> <code>osvlocal</code><span>Built-in bug checks and the offline OSV database</span></li>
-            <li><code>access</code><span>Permission checks for every pipeline page</span></li>
-            <li><code>Target</code> <code>Run</code> <code>Step</code> <code>Finding</code><span>Models</span></li>
-          </ul>
-        </section>
-        <section class="arch-app" style="--c: var(--iz-teal)" aria-label="accounts app">
-          <p class="arch-head"><b>accounts</b><code>/auth/</code><span>GitHub sign-in and roles</span></p>
-          <ul class="mods">
-            <li><code>github</code><span>The OAuth sign-in flow</span></li>
-            <li><code>roles</code> <code>identity</code><span>Maps listed GitHub logins to operator, auditor or admin; anyone else is refused</span></li>
-            <li><code>middleware</code><span>Signs out anyone removed from the list on their very next request</span></li>
-          </ul>
-        </section>
-        <section class="arch-app" style="--c: var(--iz-orange)" aria-label="audit app">
-          <p class="arch-head"><b>audit</b><span>Tamper-evident record of what happened</span></p>
-          <ul class="mods">
-            <li><code>log</code><span>Appends hash-chained events and stores evidence by its SHA-256</span></li>
-            <li><code>AuditEvent</code> <code>EvidenceArtifact</code><span>Models</span></li>
-            <li><code>verify_audit</code><span>Re-checks the whole chain from the command line</span></li>
-          </ul>
-        </section>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  </details>
-</section>
+</details>
 {% endblock %}

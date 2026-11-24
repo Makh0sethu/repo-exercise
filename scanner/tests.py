@@ -527,20 +527,16 @@ class NavigationAndSessionTests(OfflineSourcesMixin, TestCase):
     def test_empty_results_list_explains_itself(self):
         self.assertContains(self.client.get("/results/"), "No results in this session yet")
 
-    def test_about_page_shows_the_site_map_without_the_admin_address(self):
+    def test_about_page_explains_the_app_and_keeps_diagrams_without_the_admin_address(self):
         from django.conf import settings
         r = self.client.get("/about/")
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'aria-label="Site map"')
-        self.assertContains(r, 'aria-label="Code architecture"')
-        self.assertContains(r, 'aria-label="How a scan travels"')
-        self.assertContains(r, 'class="orgchart"')
+        self.assertContains(r, "known security problems")                    # says what the app is, first
+        self.assertContains(r, 'class="about-points"')
         for diagram in ("flow.svg", "site-map-full.svg", "architecture-full.svg"):
             self.assertContains(r, f"scanner/diagrams/{diagram}")
-        for app in ("scanner", "pipeline", "accounts", "audit"):
-            self.assertContains(r, f'aria-label="{app} app"')
-        for route in ("/scan/", "/parse/", "/results/", "/server/audit/", "/server/runs/&lt;id&gt;/status/", "/auth/github/login/"):
-            self.assertContains(r, f"<code>{route}</code>")
+        self.assertContains(r, "For developers")                              # the detail is folded away
+        self.assertNotContains(r, 'class="orgchart"')                         # no long text lists any more
         self.assertNotContains(r, "/" + settings.SENTINEL_ADMIN_PATH)          # a private admin path stays private
         self.assertContains(r, 'aria-current="page">About')                     # nav marks it active
 
@@ -630,13 +626,8 @@ class PublicOnlyModeTests(TestCase):
 
     def test_about_page_lists_only_public_parts(self):
         r = self.client.get("/about/")
-        self.assertContains(r, "<code>/scan/</code>")
-        self.assertContains(r, "<code>/health/</code>")
-        for hidden in ("<b>pipeline</b>", "<b>accounts</b>", "<b>audit</b>", "tag--role", "tag--staff", "node--role",
-                       "node--staff", "Signed-in operators", 'aria-label="pipeline app"'):
-            self.assertNotContains(r, hidden)
-        self.assertContains(r, 'aria-label="scanner app"')
-        self.assertContains(r, 'aria-label="How a scan travels"')
+        self.assertNotContains(r, "Signed-in operators")
+        self.assertContains(r, "scanner/diagrams/flow.svg")
         self.assertContains(r, "scanner/diagrams/site-map-public.svg")
         self.assertContains(r, "scanner/diagrams/architecture-public.svg")
         self.assertNotContains(r, "-full.svg")                                  # the admin parts aren't drawn either
